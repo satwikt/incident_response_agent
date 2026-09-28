@@ -11,7 +11,6 @@ Accepted, documented trade-offs. Each is a technical fact; whether it is accepta
 ## Testing
 - Browser-level XSS verification was done in jsdom, not a real browser, at M0.
 - Until an independent Tester round runs (M1 onward), verification is by the Developer only.
-- CI has not yet run on GitHub.
 
 ## Repository
 - Older git history still contains pre-rename wording in blobs; CI greps check the current tree and commit messages only.

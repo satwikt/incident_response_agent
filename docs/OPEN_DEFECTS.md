@@ -26,7 +26,6 @@ edge. "Blocks" says which milestone cannot be called done until the item is clos
 | O3 | Hindsight `reflect` does not complete on any free Groq model tried (token-per-minute limits). Runbook summaries will come from our own LLM call over recall results. | M3 (optional feature) | Re-test on a paid tier; consider `enable_observations=false` |
 | O4 | Effect of Hindsight directives on reflect is unverified (depends on O3). | M3 (operator preferences) | Fall back to tagged preference memories |
 | O5 | XSS fix in the Todo UI was checked in jsdom, not a real browser (the browser tool blocks 127.0.0.1). | M4 tester round | Re-check in a real browser |
-| O10 | CI (`.github/workflows/ci.yml`) has never run on GitHub. | M1 gate | Confirm the first run after this push |
 | O11 | Only one route per fault cause was exercised live; other route combinations rely on unit tests. | none | Optional extra live pass |
 | O12 | Not tested live: the 2,000 requests/s flood, access from outside the host, a 1 MB header value, cross-service id suppression with a second key (all covered by unit tests or by localhost binding where applicable). | none | Optional |
 
@@ -42,6 +41,8 @@ edge. "Blocks" says which milestone cannot be called done until the item is clos
 | H6 | Public content deliverables (article, post, video) not started. | M5 |
 
 ## Closed in M0 and M1 (for reference)
+CI had never run on GitHub (O10): the first run (`ci` #1, commit `6dbc150`, run 36456523551) passed all three jobs: `copilot-tests`, `demo-tests`, `hygiene` (event-wording, forbidden-files, compose-size and gitleaks checks).
+
 Surrogate-character 500 on ingest, demo 500 leaking an internal message, Host-header redirect, slow-request alert ignoring
 the minimum-request rule (D1), log ordering (D2), alert lines without a window (D4), chat cache and RAG removal,
 committed secrets and databases, stored XSS in the Todo UI. Details and evidence: [`TEST_LOG.md`](TEST_LOG.md).

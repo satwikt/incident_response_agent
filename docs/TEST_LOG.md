@@ -109,5 +109,8 @@ Not verified by the tester: other fault/route combinations (one route per cause 
 - **Automated:** Copilot 110 tests, Demo 116 tests, 0 failing; 7/7 injected mutations caught earlier in the round.
 - **Live:** two-service stack; ingest, storage, tools, watcher, restarts and all five fault scenarios verified against real traffic by two independent testers (Sonnet security scenarios, Opus functional scenarios) plus my own re-verification of every finding.
 - **Compose:** `copilot` and `demo` only.
-- **Confidence: about 90%** that M1 does what it claims in the tested environment. Residual risk: behaviour under real production traffic, TLS/proxy concerns, the LLM-dependent path (the watcher's agent call has not run with a working model yet, gate O2), and CI never having run on GitHub.
+- **Confidence: about 90%** that M1 does what it claims in the tested environment. Residual risk: behaviour under real production traffic, TLS/proxy concerns, and the LLM-dependent path (the watcher's agent call has not run with a working model yet, gate O2).
 - **Carried forward:** D3 (alert dedupe) and gate O2 (agent on Groq) into M2; chat auth and UI escaping into M4.
+
+### Published
+M0 (`af3a821`) and M1 (`6dbc150`) were pushed to `origin/main`. The first GitHub Actions run (`ci` #1, run 36456523551) passed all three jobs: `copilot-tests`, `demo-tests`, `hygiene` (event-wording, forbidden-files, compose-size and gitleaks checks). This closes the "CI never ran" item.
