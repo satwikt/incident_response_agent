@@ -38,40 +38,38 @@ run — applications push one event per request over plain HTTP.
 
 ```mermaid
 flowchart TB
-    subgraph App["Monitored application (Demo/)"]
-        API["Todo API"]
-        Emitter["Event emitter\n(batched, never blocks a request)"]
-        Journal["Action journal\nGET /ops/journal"]
-        API --> Emitter
-    end
-
-    subgraph Copilot["Copilot"]
-        Ingest["POST /ingest/events\n(keyed, rate-limited, validated)"]
-        Store[("SQLite: events, incidents,\nincident_events, outbox")]
-        Watcher["Watcher\nevery WATCHER_INTERVAL_MINUTES"]
-        Detect["Breach detector\n(error rate, p95, slow requests, keywords\nminimum-sample + hysteresis rules)"]
-        IM["Incident manager\nfingerprint + dedupe + state machine"]
-        MemMod["agent/memory.py\nrecall / retain, fails open"]
-        Diag["Diagnosis queue\nfull (ADK agent, 5 read-only tools)\nor verify (memory-first, no tools)"]
-        Outbox["Durable outbox\nidempotent, ordered, leased, dead-letters"]
-    end
-
-    HS[("Hindsight\nepisodic + procedural memory")]
+    API["Todo API"]
+    Emitter["Event emitter, batched\nnever blocks a request"]
+    Ingest["POST /ingest/events\nkeyed, rate-limited, validated"]
+    Store[("SQLite: events, incidents,\nincident_events, outbox")]
+    Watcher["Watcher, every\nWATCHER_INTERVAL_MINUTES"]
+    Detect["Breach detector\nerror rate, p95, slow requests, keywords"]
+    IM["Incident manager\nfingerprint, dedupe, state machine"]
+    Recall["Memory: recall\nby fingerprint + similarity"]
+    HS[("Hindsight")]
+    Diag["Diagnosis queue\nfull diagnosis, or memory-first verify"]
+    Outbox["Durable outbox\nidempotent, ordered, dead-letters"]
     Discord["Discord webhook"]
-    Human["On-call engineer\n(runs an allow-listed fix via POST /ops)"]
+    Human["On-call engineer\nruns an allow-listed fix via POST /ops"]
+    Journal["Action journal\nGET /ops/journal"]
+    Retain["Memory: retain\nthe outcome, on resolve"]
 
-    Emitter -->|"one JSON event\nper request"| Ingest --> Store
-    Watcher --> Detect --> IM
-    IM -->|"new incident"| MemMod
-    MemMod <-->|"recall by fingerprint\n+ similarity"| HS
-    MemMod -->|"exact match,\nconfirmed fix"| Diag
-    IM -->|"opening alert,\nimmediately"| Outbox --> Discord
+    API --> Emitter --> Ingest --> Store --> Watcher --> Detect --> IM
+    IM --> Recall
+    Recall <--> HS
+    Recall --> Diag
+    IM --> Outbox
     Diag -->|"diagnosis,\na 2nd message"| Outbox
-    Discord --> Human
-    Human -->|"applies an\nallow-listed action"| Journal
-    IM -->|"on resolve: fetch\nwhat actually fixed it"| Journal
-    IM -->|"retain the outcome"| MemMod
-    Store --> Watcher
+    Outbox --> Discord --> Human --> Journal
+    Journal -.->|"on resolve, read\nwhat actually fixed it"| Retain
+    Retain <--> HS
+
+    classDef app fill:#f6e6ff,stroke:#8a4fc9;
+    classDef copilot fill:#e0f7f5,stroke:#2a9d8f;
+    classDef ext fill:#fff3cd,stroke:#c9970a;
+    class API,Emitter,Journal app
+    class Ingest,Store,Watcher,Detect,IM,Recall,Diag,Outbox,Retain copilot
+    class HS,Discord,Human ext
 ```
 
 **Detect → dedupe.** The watcher runs the same five read-only tools the agent uses (`get_error_rate`, `get_latency`,
