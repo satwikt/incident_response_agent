@@ -375,3 +375,48 @@ Time for an async retain to complete (needs a run with an unexhausted quota), re
 | Hygiene | local run of CI greps | tree, commit messages, tracked forbidden files all clean |
 
 Limitations recorded honestly: these were verified by the developer, not yet by an independent Tester instance (rounds start at M1 per §7); the browser tool in this environment blocks `127.0.0.1`, so XSS was checked in jsdom rather than a real browser; CI has not run on GitHub yet; old history blobs still contain pre-rename wording (checks are HEAD-based; squash-rewrite again before submission if the history itself must be clean).
+
+
+## 15. M2 (incident lifecycle, diagnosis queue, outbox): decisions and results (2026-09-28)
+
+### 15.1 What was built
+- **Fingerprints and incidents.** A breach fingerprint is (service, kind, route, exception type); volatile numbers are excluded. One incident per problem, distinct fingerprints seen together share one incident, a returning fingerprint opens a new incident linked by `recurrence_of`, at most `MAX_OPEN_INCIDENTS` active per service. States OPEN, ACKED, REMEDIATING, MONITORING, RESOLVED, SUPPRESSED with compare-and-swap on a version number and an audit timeline.
+- **Recovery** needs `RECOVERY_WINDOWS` consecutive healthy windows; a route is healthy only with enough traffic and below `CLOSE_RATIO` x the alert thresholds (hysteresis). Too little traffic is *unknown*: the streak neither advances nor resets.
+- **Diagnosis queue** (`agent/diagnosis.py`): off the detection path; per-run model-call cap (`AGENT_MAX_LLM_CALLS`, ADK `RunConfig`), timeout, hourly cap, **daily token budget**, circuit breaker, rate-limit waits that follow the provider's reported delay. Every incident gets a diagnosis (real or templated) and its cost (calls, tokens) is stored.
+- **Durable outbox** (`db/outbox.py`): idempotent dedupe key, per-incident ordering, leases for crashed senders, dead-letter after N attempts, Discord 429 honoured.
+- **Two-message alerts**: the opening alert is sent immediately from the breach evidence ("diagnosis in progress"); the diagnosis follows as a separate message only if the incident is still active. Mentions are disabled in every payload and embed text is budgeted to Discord's 6,000-character limit.
+- **Agent on Groq through LiteLLM** (`agent/llm.py`): thought parts are stripped from outgoing history (Groq rejects `reasoning_content`); reasoning effort and reply length are capped by configuration.
+
+### 15.2 Gate O2 (agent on Groq): result
+20 diagnoses, production agent code and prompt, 5 seeded incident types, `groq/openai/gpt-oss-120b`: **18 completed, 2 gave up on rate-limit waits; 0 function-calling errors, 0 runs without a tool call; every completed run named the right cause.** Average 3.4 tool calls, 5.0 s, about 9,500 tokens per run; rate-limit waits on 13 of 20 runs. Function-calling reliability is not the constraint; quota is. First attempt failed on the reasoning-content history bug, fixed and unit tested.
+
+### 15.3 Provider limits found while testing (affect planning)
+- `gpt-oss-120b` free tier: **8,000 tokens per minute and 200,000 tokens per day** (`Limit 200000, Used 199519`). About 20 diagnoses per day at the measured cost. The gate and live tests exhausted the day's quota.
+- Consequences: (1) the agent has a **daily token budget** guard (`AGENT_DAILY_TOKEN_BUDGET`, default 150,000 in compose); (2) the **seed history must not be retained live**: 50 incidents at about 4,000 tokens each exceeds one day on one model, so build it in batches over days, on a paid tier, or by splitting retain across models; (3) demos and recordings need a verified-healthy provider and a preflight check (see KICKOFF_INSIGHTS.md).
+- `reasoning_effort=low` and a reply cap were added to cut tokens per diagnosis. **Not yet measured** because the daily quota was exhausted; measure on fresh quota (open item O14).
+
+### 15.4 Bugs found by live testing that unit tests had not caught
+1. `resolved` alert overtook `opened` (opening alert waited on the diagnosis). Found with a fake Discord webhook; fixed by the two-message flow.
+2. Discord rejects embeds over 6,000 characters in total; the first renderer could exceed it. Found by a unit test; fixed with a text budget.
+3. Diagnosis rate-limit handling: a fixed 45 s wait could never succeed when a single run exceeded the token budget; now provider-aware and combined with smaller runs and a daily budget.
+
+### 15.5 Verification so far
+Copilot suite 233 tests, all passing; 14 of 14 deliberately injected bugs in the M2 logic are caught (one gap, missing hysteresis tests, was found and closed). Live lifecycle verified against real traffic and a fake webhook: one incident across many cycles, auto-resolve, linked recurrence, restart mid-incident with no duplicate, 429 retry delivered once, correct alert order.
+**Not yet done for M2:** independent tester rounds (briefs are in TESTER_BRIEFS.md, section M2), and a real diagnosis run on the final code with fresh quota.
+
+
+## 16. M3 memory: first live end-to-end result (2026-09-29)
+
+Live on the full 3-service stack (demo, copilot, hindsight; MEMORY_MODE=on; agent and Hindsight both on `groq/openai/gpt-oss-20b`, separate quotas). One fingerprint (POST /todos error_rate, SimulatedDatabaseStateError), three incidents:
+
+| Incident | Cause | Mode | LLM calls | Tokens | Proposed action | Result |
+|---|---|---|---|---|---|---|
+| INC-0007 | bad_deploy (release changed) | full | 4 | 8,101 | rollback_config (wrong guess) | Operator tried rollback_config (failed), then rollback_release (worked). Retained with both, tagged `fix:rollback_release`, `failed:rollback_config`. |
+| INC-0008 | bad_deploy again | **verify** (recurrence of INC-0007) | **1** | **566** | rollback_release (correct) | Verify step matched context, proposed the confirmed fix. **14x fewer tokens, 4x fewer calls than the full diagnosis.** |
+| INC-0009 | **bad_config** (decoy: same error text/status, config_rev changed instead of release) | verify (recurrence of INC-0008 by fingerprint) | 1 | 660 | **none** | Verify correctly said **Verdict: mismatch** — "current runtime context (release=v2.3.1, config_rev=cfg-r42) differs from past contexts (release=v2.4.0, config_rev=cfg-r41)" — and declined to reapply rollback_release. |
+
+This confirms the design intent directly: the fingerprint is symptom-level (coarse on purpose), and the verify step's job is to catch when the *cause* differs despite the same symptom. It did.
+
+### Two real gaps found by this live run (not unit-testable in isolation; found only by running the whole stack)
+- **G1 (Med):** `POST /chaos/reset` on the demo app also clears its operational action journal (`FaultState.reset()`). If reset is called before the incident's async retain has run (a plausible operator sequence: fix it, then reset chaos), the fix is lost from the journal and the incident is retained as "resolved without action" even though a real fix was applied — this happened to INC-0009 in this run. Fix options: don't clear the journal on chaos reset, or snapshot the journal into the incident at RESOLVE time rather than at retain time. **Not fixed yet** (see OPEN_DEFECTS O17).
+- **G2 (Low, accepted as fail-safe):** when verify returns `Verdict: mismatch`, the incident is **not** automatically escalated to a full tool-using diagnosis. It stays OPEN with `proposed_action=None` until a human acts or the underlying problem is separately fixed. This is deliberately safe (it never misapplies a stale memorized fix) but leaves the incident under-diagnosed. **Not fixed yet** (see OPEN_DEFECTS O18); the escalation would need `submit`/telemetry plumbing through `on_diagnosis_done`, which was judged too risky to add this close to submission.

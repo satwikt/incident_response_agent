@@ -9,7 +9,6 @@ edge. "Blocks" says which milestone cannot be called done until the item is clos
 
 | ID | Sev | Description | Found by | Owner / blocks | Status |
 |---|---|---|---|---|---|
-| D3 | Low | An ongoing breach is re-detected every watcher cycle (15 s in the demo profile), so each cycle triggers a new agent run and notification (11 in about 5 minutes observed). | Opus functional QA | M2 (incident fingerprint, dedupe, cooldown) | Open, planned |
 | S1 | Med | Copilot chat endpoints (`/chats`, `/chat/*`, `/ask/*`) have no authentication, so anyone who can reach the port can read chats and spend LLM budget. Ports are bound to 127.0.0.1 as the mitigation. | Design review (DESIGN section 11) | M4 (operator token) | Open, mitigated by localhost binding |
 | S2 | Med | The chat UI renders LLM and user text into the DOM through `innerHTML` (`renderMarkdownLite`), a stored-XSS surface once log-derived text reaches the chat. | Code reading during M1 | M4 (escape, CSP header) | Open |
 | S3 | Low | The ingest endpoint has no body-read timeout: a client that declares a body and sends it very slowly holds a connection open. | Sonnet security round | Deployment (reverse proxy timeouts) | Accepted for the local demo |
@@ -22,12 +21,19 @@ edge. "Blocks" says which milestone cannot be called done until the item is clos
 
 | ID | Item | Blocks | Plan |
 |---|---|---|---|
-| O2 | **Agent LLM on Groq through ADK/LiteLLM is untested** (function-calling reliability; the free Gemini tier was unreliable). The watcher's agent call has never run with a working model. | **M2 and M3** | Gate before M2: 20-run tool-call test; fall back to a paid tier or another model if flaky |
+| O2 | ~~Agent LLM on Groq untested~~ **Closed with caveat (see DESIGN 15.2):** 18 of 20 completed, 0 function-calling errors; the limit is provider quota. | none | none |
+| O13 | **Groq free tier: 200,000 tokens per day per model** (about 20 diagnoses). Daily-budget guard added; seed history cannot be retained live in one day. | M3 (seed bank), demo day | Build the seed bank in batches, use a paid tier, or spread across models; run the preflight check before any demo |
+| O14 | Effect of `reasoning_effort=low` and the reply cap on tokens per diagnosis is **unmeasured** (quota exhausted). | Article B numbers | Re-run the agent gate on fresh quota |
+| O15 | M2 independent tester rounds not yet run (briefs ready in TESTER_BRIEFS.md). | M2 gate | Run Opus functional and Sonnet security-style rounds |
+| O16 | Ideas from the team kickoff not yet built: memory-first fast path, Slack/Teams renderers, integrations documentation, preflight script. | M3 to M5 | See KICKOFF_INSIGHTS.md |
 | O3 | Hindsight `reflect` does not complete on any free Groq model tried (token-per-minute limits). Runbook summaries will come from our own LLM call over recall results. | M3 (optional feature) | Re-test on a paid tier; consider `enable_observations=false` |
 | O4 | Effect of Hindsight directives on reflect is unverified (depends on O3). | M3 (operator preferences) | Fall back to tagged preference memories |
 | O5 | XSS fix in the Todo UI was checked in jsdom, not a real browser (the browser tool blocks 127.0.0.1). | M4 tester round | Re-check in a real browser |
 | O11 | Only one route per fault cause was exercised live; other route combinations rely on unit tests. | none | Optional extra live pass |
 | O12 | Not tested live: the 2,000 requests/s flood, access from outside the host, a 1 MB header value, cross-service id suppression with a second key (all covered by unit tests or by localhost binding where applicable). | none | Optional |
+
+| O17 | Med | `/chaos/reset` on the demo app clears its action journal, which can erase the record of what fixed an incident if reset is called before the async retain runs. Reproduced live. | M3/M4 | Snapshot actions into the incident at resolve time instead of reading the journal at retain time; or stop clearing the journal on chaos reset |
+| O18 | Low (accepted, fail-safe) | On a verify "mismatch" the incident does not escalate to a full diagnosis; it stays open with no proposed action. Reproduced live (INC-0009, the decoy case). | M4/M5 | Needs `submit`/telemetry plumbing through `on_diagnosis_done`; deferred as too risky right before submission |
 
 ## Housekeeping
 
@@ -41,6 +47,7 @@ edge. "Blocks" says which milestone cannot be called done until the item is clos
 | H6 | Public content deliverables (article, post, video) not started. | M5 |
 
 ## Closed in M0 and M1 (for reference)
+D3 (the same breach re-alerting every 15 s) is closed by the M2 incident engine: one incident, one opening alert, verified live.
 CI had never run on GitHub (O10): the first run (`ci` #1, commit `6dbc150`, run 36456523551) passed all three jobs: `copilot-tests`, `demo-tests`, `hygiene` (event-wording, forbidden-files, compose-size and gitleaks checks).
 
 Surrogate-character 500 on ingest, demo 500 leaking an internal message, Host-header redirect, slow-request alert ignoring

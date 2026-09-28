@@ -114,3 +114,29 @@ Not verified by the tester: other fault/route combinations (one route per cause 
 
 ### Published
 M0 (`af3a821`) and M1 (`6dbc150`) were pushed to `origin/main`. The first GitHub Actions run (`ci` #1, run 36456523551) passed all three jobs: `copilot-tests`, `demo-tests`, `hygiene` (event-wording, forbidden-files, compose-size and gitleaks checks). This closes the "CI never ran" item.
+
+
+## M2: incident lifecycle, diagnosis queue, outbox, alerts (in progress, 2026-09-28)
+
+**Verifier so far:** Developer only. Independent rounds pending (briefs in TESTER_BRIEFS.md, section M2).
+
+### Automated
+- Copilot 233 tests (lifecycle, state machine incl. concurrent operators, outbox, diagnosis budget and breaker, notifier, end-to-end cycle on a real database), all passing.
+- Mutation check on the M2 logic: 14 of 14 injected bugs caught (one survivor, hysteresis, exposed a missing test; tests added and the mutation re-run).
+
+### Live (real stack, real traffic, fake Discord webhook)
+Verified: no incident on healthy traffic; one incident across 4 to 7 breach windows; opening alert delivered once (first request answered 429, retried after the reported delay); auto-resolve after 2 healthy windows; a returning fault opened a new incident linked with `recurrence_of`; restarting the Copilot mid-incident kept the incident and created no duplicate; webhook order opened, resolved, opened; `allowed_mentions.parse` empty on every payload.
+Defects found by this testing and fixed: alert ordering, Discord 6,000-character limit, rate-limit handling (see DESIGN 15.4).
+
+### Gate O2
+See DESIGN 15.2 (18 of 20 completed; 0 function-calling errors; quota was the only failure).
+
+### Not yet verified
+Independent tester rounds; a diagnosis on the final code with fresh quota (the daily token quota of the agent model was exhausted); tokens per diagnosis after the reasoning-effort change.
+
+
+## M3 memory: first live end-to-end run (2026-09-29)
+
+**Verified live**, full 3-service stack, real Groq calls, real Hindsight retain/recall. See DESIGN.md section 16 for the full table and narrative text pulled directly from Hindsight. Summary: full diagnosis 4 calls/8,101 tokens; memory-first verify on an exact repeat 1 call/566 tokens (14x token reduction); verify correctly detected a mismatch on a decoy fault (same error text, different actual cause: config_rev changed instead of release) and declined to misapply the remembered fix. Two real gaps found and documented, not fixed: G1 (chaos-reset clears the action journal, can lose "what fixed it") and G2 (mismatch doesn't escalate to a full diagnosis — accepted as fail-safe for now).
+
+**Not yet done:** automated regression tests for G1/G2 (documented as known limitations instead, given time constraints); independent tester round for M3; benchmark script run (fixed seeds, multiple runs, memory on/off comparison, error bars) — the numbers above are a single live run, not the formal benchmark.
