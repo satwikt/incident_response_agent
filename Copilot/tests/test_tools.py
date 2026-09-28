@@ -237,3 +237,38 @@ def test_recent_logs_orders_by_arrival_time_not_insertion_order():
         store.insert_events("qa-order", [{"id": rid, "ts": NOW, "level": "INFO", "message": rid}], received_at=NOW - age)
     lines = store.recent_logs("qa-order", None, 10, 5, NOW)["sample_lines"]
     assert [ln.split(" | ")[-1] for ln in lines] == ["y", "z", "x"]
+
+
+# ── hysteresis: when is a route "comfortably healthy"? ────────────────────────────────────
+
+from agent.detect import healthy_routes  # noqa: E402
+
+
+def _err(route, pct, enough=True):
+    return {"route": route, "error_percent": pct, "request_count": 50, "error_count": int(pct / 2), "enough_data": enough}
+
+
+def _lat(route, ms, enough=True):
+    return {"route": route, "p95_latency_ms": ms, "enough_data": enough}
+
+
+def test_a_route_just_under_the_alert_threshold_is_not_healthy():
+    # threshold 10%, close ratio 0.5: 9% has stopped alerting but has not recovered, so an incident must stay open
+    ok = healthy_routes({"by_route": [_err("A", 9.0), _err("B", 4.9), _err("C", 5.0)]}, {"by_route": []},
+                        {"by_route": []}, T, 0.5)
+    assert ok == {"B"}
+
+
+def test_routes_without_enough_data_are_unknown_not_healthy():
+    assert healthy_routes({"by_route": [_err("A", 0.0, enough=False)]}, {"by_route": []}, {"by_route": []}, T, 0.5) == set()
+
+
+def test_high_latency_or_slow_requests_keep_a_route_from_counting_as_healthy():
+    err = {"by_route": [_err("A", 0.0), _err("B", 0.0), _err("C", 0.0), _err("D", 0.0)]}
+    lat = {"by_route": [_lat("A", 260.0), _lat("B", 200.0), _lat("D", 9999.0, enough=False)]}   # threshold 500, half = 250
+    slow = {"by_route": [{"route": "C", "slow_count": 2, "request_count": 50, "enough_data": True}]}  # 3 * 0.5 -> 1
+    assert healthy_routes(err, lat, slow, T, 0.5) == {"B", "D"}    # D's thin latency sample is ignored, not judged
+
+
+def test_close_ratio_one_means_only_the_alert_threshold_matters():
+    assert healthy_routes({"by_route": [_err("A", 9.0), _err("B", 10.0)]}, {"by_route": []}, {"by_route": []}, T, 1.0) == {"A"}

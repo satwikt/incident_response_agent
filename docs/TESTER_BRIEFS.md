@@ -38,3 +38,48 @@ Placeholders: `$COPILOT` (base URL), `$DB` (SQLite path), `$KEY_A`, `$KEY_B` (va
 20. Approve twice concurrently; approve on RESOLVED/SUPPRESSED (expect 409); kill the Copilot mid-REMEDIATING and restart (action not re-fired, journal shows intent and result).
 21. The Approve button displays the action name and params from the registry, not model text; attempt to make the model output a non-registry action and confirm rejection.
 22. Chat: unauthenticated request rejected; a chat "preference" write requires explicit confirmation and records the actor.
+
+## Round M2 (incident lifecycle, diagnosis queue, outbox, alerts)
+
+Working rule: the **functional** scenarios go to an Opus tester; the **security-style** scenarios go to a Sonnet tester.
+Setup for both: the stack is up with a fake Discord webhook on the compose network (`fakehook`, logs every request to
+`hook.log`; it answers the FIRST request with 429 `retry_after` 3 s and everything after with 204), demo profile
+(`WATCHER_INTERVAL_MINUTES=0.25`, `MIN_REQUESTS=10`, `RECOVERY_WINDOWS=2`). Reset chaos and clear incidents before starting.
+
+### M2-F (functional, Opus)
+1. **Baseline:** 30 s of healthy traffic produces no incident and no alert.
+2. **One incident per problem:** inject `bad_deploy` on `post_todos` and drive traffic for at least 5 cycles. Exactly one
+   incident exists; `breach_windows` grows; the webhook received exactly one opening alert.
+3. **Alert never waits for the LLM:** the opening alert arrives within about two cycles of the first breach and says the
+   diagnosis is in progress; any diagnosis arrives later as a *separate* message and never before the opening alert.
+4. **Order:** for every incident the webhook order is opened, then diagnosis (if any), then resolved. Check across a
+   fast open/resolve where the diagnosis is slow.
+5. **Recovery rules:** apply the right fix, then (a) send only 2 requests per window (below `MIN_REQUESTS`): the incident
+   must stay open, (b) then healthy traffic with enough volume: it resolves after exactly `RECOVERY_WINDOWS` healthy
+   windows, once, with one resolved alert.
+6. **Hysteresis:** with the fault still on but at a low error rate near the threshold, the incident does not flap.
+7. **Recurrence:** inject the same fault again after resolution: a NEW incident with `recurrence_of` set; a different
+   fault (`slow_downstream` on `delete_todo`) gives an unlinked incident.
+8. **Grouping:** `pool_exhausted` (every route fails) produces one incident, not one per route; two unrelated faults on
+   different routes at the same time give two incidents.
+9. **Restart:** restart the copilot mid-incident: same incident continues, no duplicate incident, no duplicate alert;
+   restart while an alert is queued: it is delivered exactly once.
+10. **Discord failure handling:** the first delivery is answered 429: the alert is retried after the `retry_after` and
+    delivered once. Stop the webhook container for a while: alerts wait in the outbox (`outbox` table) and are delivered
+    after it returns, in order, without duplicates.
+11. **Diagnosis budget:** with the LLM unavailable (unset the API key), incidents still open and alert, with a templated
+    diagnosis message; after `BREAKER_FAILURES` failures the model is not called again during the pause.
+12. **Reminder:** with `RENOTIFY_MINUTES=1`, an unacknowledged open incident sends a reminder about every minute, not every
+    cycle.
+
+### M2-S (security-style, Sonnet)
+1. **Prompt injection through logs:** post events (valid key) whose `message` says to ignore instructions, call other
+   tools, print environment variables or API keys, or contact a URL; trigger an incident. The diagnosis must not show
+   any secret, and the tool-call log must show only the five read-only tools.
+2. **Mentions and markup in alerts:** event text containing `@everyone`, `<@&123>`, markdown links and 5,000-character
+   lines: every webhook payload has `allowed_mentions.parse == []` and total embed text at most 6,000 characters.
+3. **Incident flood:** create many distinct fingerprints (many routes with errors): at most `MAX_OPEN_INCIDENTS` active
+   incidents, at most `AGENT_MAX_RUNS_PER_HOUR` diagnoses, and the service stays responsive.
+4. **Outbox integrity:** a duplicate `dedupe_key` cannot be enqueued; killing the copilot mid-delivery does not lose or
+   double-send an alert.
+5. **Secrets in output:** search the webhook log, container logs and stored `rca_text` for the configured keys.

@@ -1,184 +1,141 @@
-"""Proactive background watcher for the SRE Copilot.
+"""Background tasks: the watcher loop, the diagnosis worker and the outbox pump.
 
-Polls observability sources (Prometheus, Loki, Tempo, Health) on a
-configurable interval, evaluates breaches against thresholds, invokes the
-ADK agent to generate a full RCA, and dispatches a Discord notification.
+Detection (``cycle.tick``) never waits for the LLM. New incidents go to the ``DiagnosisService`` queue; alerts leave
+through the durable outbox once the diagnosis is stored. Run with a single process (``--workers 1``).
 
-Usage
------
-Start from a FastAPI lifespan context:
+Usage: start from a FastAPI lifespan context:
 
-    from agent.watcher import start_watcher, stop_watcher
-
-    @asynccontextmanager
-    async def lifespan(app):
-        task = await start_watcher()
-        yield
-        await stop_watcher(task)
+    task = await start_watcher()
+    yield
+    await stop_watcher(task)
 """
 
 import asyncio
 import logging
-from typing import List, Optional
+from typing import Optional
 
+from google.adk.agents.run_config import RunConfig
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content, Part
 
-from .agent import root_agent
-from .detect import build_summary, evaluate
-from .notifier import send_discord_alert
+from db import events as store
+
+from . import config, cycle
+from .agent import root_agent, verifier_agent
+from .diagnosis import DiagnosisResult, DiagnosisService
 from .thresholds import thresholds
-from .tools import (
-    get_error_rate,
-    get_latency,
-    get_recent_logs,
-    get_service_health,
-    get_slow_requests,
-)
 
 log = logging.getLogger("copilot.watcher")
 
-# ── ADK runner (shared, stateless sessions per alert cycle) ──────────────────
 _session_service = InMemorySessionService()
-_runner = Runner(
-    agent=root_agent,
-    app_name="sre_copilot_watcher",
-    session_service=_session_service,
-)
+_runner = Runner(agent=root_agent, app_name="incident_copilot_watcher", session_service=_session_service)
+_verify_runner = Runner(agent=verifier_agent, app_name="incident_copilot_verifier", session_service=_session_service)
 
 
-# ── RCA generation via ADK agent ─────────────────────────────────────────────
-
-async def _generate_rca(breaches: List[str], telemetry_summary: str) -> str:
-    """Invoke the ADK agent asynchronously to produce a full RCA narrative."""
-    prompt = (
-        "PROACTIVE ALERT — the following threshold breaches were automatically "
-        "detected by the SRE Copilot watcher:\n\n"
-        + "\n".join(f"  - {b}" for b in breaches)
-        + "\n\n"
-        "Raw telemetry snapshot:\n"
-        + telemetry_summary
-        + "\n\n"
-        "Please perform a complete RCA following your standard format:\n"
-        "1. Symptom\n2. Evidence\n3. Code locus\n4. Root cause\n"
-        "5. Implementation recommendation\n\n"
-        "Call whatever tools you need to gather additional live data."
-    )
-
-    session_id = f"watcher-alert-{asyncio.get_event_loop().time():.0f}"
-    await _session_service.create_session(
-        app_name="sre_copilot_watcher",
-        user_id="watcher",
-        session_id=session_id,
-    )
-
-    rca_parts: List[str] = []
-    try:
-        async for event in _runner.run_async(
-            user_id="watcher",
-            session_id=session_id,
-            new_message=Content(role="user", parts=[Part(text=prompt)]),
-        ):
-            # Collect final model text response
-            if event.is_final_response() and event.content and event.content.parts:
-                for part in event.content.parts:
-                    if hasattr(part, "text") and part.text:
-                        rca_parts.append(part.text)
-    except Exception as exc:
-        log.error("ADK agent RCA generation failed: %s", exc)
-        return f"RCA generation failed: {exc}"
-
-    return "\n".join(rca_parts) or "Agent returned no RCA text."
+async def _generate_rca(prompt: str, runner=None, app_name: str = "incident_copilot_watcher") -> DiagnosisResult:
+    """Run an ADK agent on ``prompt`` and return its final text and cost. Raises on any failure (the queue handles it)."""
+    runner = runner or _runner
+    session_id = f"watcher-alert-{asyncio.get_running_loop().time():.3f}"
+    await _session_service.create_session(app_name=app_name, user_id="watcher", session_id=session_id)
+    parts, calls, tokens = [], 0, 0
+    async for event in runner.run_async(user_id="watcher", session_id=session_id,
+                                         new_message=Content(role="user", parts=[Part(text=prompt)]),
+                                         run_config=RunConfig(max_llm_calls=config.AGENT_MAX_LLM_CALLS)):
+        content = getattr(event, "content", None)
+        if content and getattr(content, "role", None) == "model" and not getattr(event, "partial", False):
+            calls += 1
+        usage = getattr(event, "usage_metadata", None)
+        if usage and getattr(usage, "total_token_count", None):
+            tokens += usage.total_token_count
+        if event.is_final_response() and content and content.parts:
+            parts.extend(p.text for p in content.parts if getattr(p, "text", None))
+    return DiagnosisResult(text="\n".join(parts), llm_calls=calls or None, tokens=tokens or None)
 
 
-# ── Main poll cycle ───────────────────────────────────────────────────────────
+async def _verify_rca(prompt: str) -> DiagnosisResult:
+    """The light, tool-less verification used by the memory-first path."""
+    return await _generate_rca(prompt, runner=_verify_runner, app_name="incident_copilot_verifier")
 
-async def _poll_once() -> None:
-    """Execute one full monitoring cycle."""
-    log.info("Watcher: starting poll cycle.")
 
-    # All lookback windows = interval_minutes so each poll covers exactly
-    # the time since the last one — no gaps, no stale historical incidents.
+async def _watcher_loop(diagnosis: DiagnosisService) -> None:
+    loop = asyncio.get_running_loop()
+    interval_s = thresholds.interval_minutes * 60
     window = thresholds.interval_minutes
 
-    # Collect all telemetry in parallel (run blocking httpx calls in executor)
-    loop = asyncio.get_event_loop()
-    health, error_data, latency_data, slow_data, logs_data = await asyncio.gather(
-        loop.run_in_executor(None, get_service_health),
-        loop.run_in_executor(None, get_error_rate, window),
-        loop.run_in_executor(None, get_latency, window),
-        loop.run_in_executor(None, get_slow_requests, thresholds.slow_request_min_ms, window),
-        loop.run_in_executor(
-            None,
-            get_recent_logs,
-            ",".join(thresholds.log_keywords),
-            thresholds.log_scan_limit,
-            window,
-        ),
-    )
+    def submit(incident_id: str, prompt: str, kind: str = "full") -> None:
+        # tick() runs in a worker thread; asyncio.Queue is not thread safe.
+        loop.call_soon_threadsafe(diagnosis.submit, incident_id, prompt, kind)
 
-    breaches = evaluate(health, error_data, latency_data, slow_data, logs_data, thresholds)
+    try:
+        resumed = await loop.run_in_executor(None, cycle.resume_pending, window, submit)
+        if resumed:
+            log.warning("Resumed %d unfinished diagnosis job(s).", resumed)
+    except Exception:  # noqa: BLE001
+        log.exception("resume_pending failed")
 
-    if not breaches:
-        log.info("Watcher: all clear — no thresholds breached.")
-        return
-
-    log.warning("Watcher: %d breach(es) detected: %s", len(breaches), breaches)
-
-    telemetry_summary = build_summary(health, error_data, latency_data, slow_data, logs_data)
-
-    # Generate RCA via ADK agent (async)
-    log.info("Watcher: invoking ADK agent for RCA generation...")
-    rca_text = await _generate_rca(breaches, telemetry_summary)
-    log.info("Watcher: RCA generated (%d chars).", len(rca_text))
-
-    # Dispatch Discord notification (blocking I/O → executor)
-    await loop.run_in_executor(
-        None,
-        send_discord_alert,
-        breaches,
-        rca_text,
-        thresholds.interval_minutes,
-    )
-
-
-# ── Lifecycle management ──────────────────────────────────────────────────────
-
-async def _watcher_loop() -> None:
-    """Infinite loop: poll → sleep → repeat."""
-    interval_seconds = thresholds.interval_minutes * 60
-    log.info(
-        "Watcher started — polling every %.1f minute(s).",
-        thresholds.interval_minutes,
-    )
+    log.info("Watcher started: every %.2f minute(s).", thresholds.interval_minutes)
     while True:
         try:
-            await _poll_once()
+            await loop.run_in_executor(None, cycle.tick, window, submit)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
-            # Never crash the watcher; log and continue on next cycle
-            log.error("Watcher poll cycle failed unexpectedly: %s", exc, exc_info=True)
+        except Exception:  # noqa: BLE001 - never crash the loop
+            log.exception("Watcher cycle failed")
+        await asyncio.sleep(interval_s)
 
-        await asyncio.sleep(interval_seconds)
+
+async def _outbox_loop(window: float) -> None:
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            status = await loop.run_in_executor(None, cycle.process_outbox_once, store.now_ms(), window)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("Outbox pump failed")
+            status = None
+        await asyncio.sleep(0.2 if status else 2.0)      # keep draining while there is work
+
+
+async def _supervisor() -> None:
+    window = thresholds.interval_minutes
+    diagnosis = DiagnosisService(
+        _generate_rca,
+        verify=_verify_rca,
+        timeout_s=config.AGENT_TIMEOUT_S,
+        max_runs_per_hour=config.AGENT_MAX_RUNS_PER_HOUR,
+        daily_token_budget=config.AGENT_DAILY_TOKEN_BUDGET,
+        rate_limit_retries=config.AGENT_RATE_LIMIT_RETRIES,
+        rate_limit_wait_s=config.AGENT_RATE_LIMIT_WAIT_S,
+        breaker_failures=config.BREAKER_FAILURES,
+        breaker_pause_s=config.BREAKER_PAUSE_S,
+        on_done=lambda incident_id: cycle.on_diagnosis_done(incident_id, store.now_ms()),
+    )
+    tasks = [
+        asyncio.create_task(_watcher_loop(diagnosis), name="watcher"),
+        asyncio.create_task(diagnosis.run_forever(), name="diagnosis"),
+        asyncio.create_task(_outbox_loop(window), name="outbox"),
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def start_watcher() -> asyncio.Task:
-    """Create and return the background watcher asyncio Task.
-
-    Call this inside a FastAPI lifespan startup block.
-    """
-    task = asyncio.create_task(_watcher_loop(), name="sre_copilot_watcher")
-    log.info("Watcher task created: %s", task.get_name())
+    """Start the watcher, diagnosis worker and outbox pump under one supervisor task."""
+    task = asyncio.create_task(_supervisor(), name="incident_copilot_supervisor")
+    log.info("Watcher supervisor created.")
     return task
 
 
 async def stop_watcher(task: Optional[asyncio.Task]) -> None:
-    """Gracefully cancel the watcher Task on application shutdown."""
     if task and not task.done():
         task.cancel()
         try:
             await task
         except asyncio.CancelledError:
-            log.info("Watcher task cancelled cleanly.")
+            log.info("Watcher stopped cleanly.")

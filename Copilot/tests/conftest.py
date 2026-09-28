@@ -35,7 +35,9 @@ def client():
 @pytest.fixture(autouse=True)
 def clean_state(monkeypatch):
     conn = get_db_connection()
-    conn.execute("DELETE FROM events")
+    for table in ("events", "incidents", "incident_events", "outbox"):
+        conn.execute(f"DELETE FROM {table}")
+    conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('incidents', 'outbox')")
     conn.commit()
     conn.close()
     ingest.buckets.reset()

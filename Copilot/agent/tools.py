@@ -44,7 +44,7 @@ def get_latency(minutes: float = 5) -> dict:
         return {"error": str(exc), "source": "events"}
 
 
-def get_recent_logs(keyword: Optional[str] = None, limit: int = 20, minutes: float = 10) -> dict:
+def get_recent_logs(keyword: Optional[str] = None, limit: int = 10, minutes: float = 10) -> dict:
     """Get recent application events (newest first), optionally filtered by a literal keyword.
 
     Each line is: level | route | status | duration | message | exception. The message also carries the
@@ -54,7 +54,7 @@ def get_recent_logs(keyword: Optional[str] = None, limit: int = 20, minutes: flo
 
     Args:
         keyword: Optional literal text to look for (e.g. 'ValueError', 'pool', 'release=v2.4.0').
-        limit: Max number of lines to return (default 20, at most 200).
+        limit: Max number of lines to return (default 10, at most 200).
         minutes: Lookback duration in minutes (default 10).
     """
     try:

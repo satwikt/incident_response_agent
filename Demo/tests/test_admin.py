@@ -102,3 +102,21 @@ def test_ops_state_is_read_only_facts(client):
     assert set(body) == {
         "release", "config_rev", "pool_used", "pool_size", "leaked_mb", "fallback_enabled", "worker_uptime_s",
     }
+
+
+def test_journal_lists_actions_in_order_with_timestamps_and_needs_the_ops_key(client):
+    assert client.get("/ops/journal").status_code == 401
+    assert client.get("/ops/journal", headers=h(CHAOS)).status_code == 401
+    client.post("/ops/rollback_config", headers=h(OPS))
+    client.post("/ops/rollback_release", headers=h(OPS))
+    rows = client.get("/ops/journal", headers=h(OPS)).json()
+    assert [r["action"] for r in rows] == ["rollback_config", "rollback_release"]
+    assert all(isinstance(r["ts_ms"], int) and r["ts_ms"] > 1_600_000_000_000 for r in rows)
+    assert rows[0]["ts_ms"] <= rows[1]["ts_ms"]
+    assert set(rows[0]) == {"ts_ms", "action", "actor"}
+
+
+def test_journal_is_empty_after_reset(client):
+    client.post("/ops/flush_pool", headers=h(OPS))
+    client.post("/chaos/reset", headers=h(CHAOS))
+    assert client.get("/ops/journal", headers=h(OPS)).json() == []

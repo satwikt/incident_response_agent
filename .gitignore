@@ -19,3 +19,7 @@ __pycache__/
 # local-only material (not part of the project)
 Claude outputs/
 *.docx
+
+# meeting notes and transcripts (contain names and internal discussion)
+*Transcript*.txt
+*transcript*.txt

@@ -196,6 +196,12 @@ class FaultState:
             log.warning("ops: %s applied by %s", action.value, actor)
             return {"action": action.value, "applied": True}
 
+    def journal_snapshot(self, limit: int = 50) -> list:
+        """Recent operational actions, oldest first, with epoch-millisecond timestamps."""
+        with self._lock:
+            return [{"ts_ms": int(e["ts"] * 1000), "action": e["action"], "actor": e["actor"]}
+                    for e in self.journal[-max(1, min(limit, 200)):]]
+
     def context(self) -> dict:
         """Runtime facts an engineer would check first. Attached to logs and exposed read-only."""
         with self._lock:

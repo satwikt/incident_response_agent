@@ -74,6 +74,12 @@ def ops_state() -> dict:
     return state.context()
 
 
+@router.get("/ops/journal", dependencies=[Depends(require_ops_key)])
+def ops_journal() -> list:
+    """Read-only list of recent operational actions (what was tried, and when). Lets the Copilot learn what fixed an incident."""
+    return state.journal_snapshot()
+
+
 @router.post("/ops/{action}", dependencies=[Depends(require_ops_key)])
 def ops_apply(action: Action) -> dict:
     """Apply one operational action. The response does not say whether it helped."""

@@ -4,3 +4,5 @@ uvicorn[standard]
 httpx
 pydantic
 python-dotenv
+litellm
+hindsight-client

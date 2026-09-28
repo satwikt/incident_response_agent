@@ -1,4 +1,4 @@
-# Two services: the monitored demo app and the Copilot. (Hindsight joins in M3.)
+# Three services: the monitored demo app, the Copilot, and Hindsight (agent memory).
 # Each container receives only the variables it needs, so the Copilot never sees the chaos key.
 services:
   demo:
@@ -26,19 +26,61 @@ services:
     environment:
       APP_SERVICE_NAME: todo-app
       INGEST_KEYS: todo-app:${INGEST_KEY:?set INGEST_KEY in .env}
-      AGENT_MODEL: ${AGENT_MODEL:-gemini-3.5-flash}
+      AGENT_MODEL: ${AGENT_MODEL:-groq/openai/gpt-oss-120b}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       WATCHER_INTERVAL_MINUTES: ${WATCHER_INTERVAL_MINUTES:-1}
       ALERT_ERROR_RATE_THRESHOLD: ${ALERT_ERROR_RATE_THRESHOLD:-10}
       ALERT_LATENCY_P95_MS: ${ALERT_LATENCY_P95_MS:-1000}
       MIN_REQUESTS: ${MIN_REQUESTS:-20}
+      MEMORY_MODE: ${MEMORY_MODE:-on}
+      HINDSIGHT_URL: http://hindsight:8888
+      HINDSIGHT_BANK: ${HINDSIGHT_BANK:-incident-response}
+      MEMORY_MIN_SCORE: ${MEMORY_MIN_SCORE:-0.05}
+      APP_OPS_URL: http://demo:8000
+      OPS_KEY: ${OPS_KEY:-}
+      RECOVERY_WINDOWS: ${RECOVERY_WINDOWS:-3}
+      CLOSE_RATIO: ${CLOSE_RATIO:-0.5}
+      RECURRENCE_WINDOW_HOURS: ${RECURRENCE_WINDOW_HOURS:-24}
+      RENOTIFY_MINUTES: ${RENOTIFY_MINUTES:-30}
+      MAX_OPEN_INCIDENTS: ${MAX_OPEN_INCIDENTS:-5}
+      AGENT_MAX_RUNS_PER_HOUR: ${AGENT_MAX_RUNS_PER_HOUR:-12}
+      AGENT_TIMEOUT_S: ${AGENT_TIMEOUT_S:-120}
+      AGENT_MAX_LLM_CALLS: ${AGENT_MAX_LLM_CALLS:-6}
+      AGENT_DAILY_TOKEN_BUDGET: ${AGENT_DAILY_TOKEN_BUDGET:-150000}
+      AGENT_REASONING_EFFORT: ${AGENT_REASONING_EFFORT:-low}
+      AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS:-1200}
+      AGENT_RATE_LIMIT_RETRIES: ${AGENT_RATE_LIMIT_RETRIES:-3}
+      AGENT_RATE_LIMIT_WAIT_S: ${AGENT_RATE_LIMIT_WAIT_S:-45}
+      BREAKER_FAILURES: ${BREAKER_FAILURES:-3}
+      BREAKER_PAUSE_S: ${BREAKER_PAUSE_S:-300}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
     volumes:
       - copilot-data:/app/data
+    depends_on: [hindsight]
+    networks: [internal]
+
+  # Agent memory. No authentication of its own: it is reachable only on the private compose network, plus localhost for
+  # the UI on 9999. Provider and model are set explicitly (the image defaults to OpenAI); see docs/DESIGN.md section 14.
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:latest
+    ports:
+      - "127.0.0.1:9999:9999"
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-groq}
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-openai/gpt-oss-20b}
+      HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-}
+      HINDSIGHT_API_LLM_GROQ_SERVICE_TIER: ${HINDSIGHT_LLM_GROQ_SERVICE_TIER:-on_demand}
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: ${HINDSIGHT_EMBEDDINGS_PROVIDER:-local}
+    volumes:
+      - hindsight-data:/home/hindsight/.pg0
+    restart: unless-stopped
     networks: [internal]
 
 volumes:
   copilot-data:
+  hindsight-data:
 
 networks:
   internal:
