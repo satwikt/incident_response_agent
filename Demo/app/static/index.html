@@ -235,16 +235,30 @@
         function renderTodos(todos) {
             const list = document.getElementById('todo-list');
             list.innerHTML = '';
+            // Build with DOM APIs and textContent: todo titles are user input and must never be parsed as HTML.
             todos.forEach(todo => {
                 const li = document.createElement('li');
-                li.className = `todo-item ${todo.completed ? 'completed' : ''}`;
-                li.innerHTML = `
-                    <div class="todo-content">
-                        <input type="checkbox" ${todo.completed ? 'checked' : ''} onchange="toggleTodo(${todo.id}, this.checked)">
-                        <span>${todo.title}</span>
-                    </div>
-                    <button class="delete-btn" onclick="deleteTodo(${todo.id})">✖</button>
-                `;
+                li.className = 'todo-item' + (todo.completed ? ' completed' : '');
+
+                const content = document.createElement('div');
+                content.className = 'todo-content';
+
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.checked = !!todo.completed;
+                box.addEventListener('change', () => toggleTodo(todo.id, box.checked));
+
+                const label = document.createElement('span');
+                label.textContent = todo.title;
+
+                content.append(box, label);
+
+                const del = document.createElement('button');
+                del.className = 'delete-btn';
+                del.textContent = '✖';
+                del.addEventListener('click', () => deleteTodo(todo.id));
+
+                li.append(content, del);
                 list.appendChild(li);
             });
         }

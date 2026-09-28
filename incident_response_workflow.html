@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incident Response Agent Workflow</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1b2330; --muted: #5d6879; --line: #d7dce4;
+    --app: #e8f1ff; --app-b: #7aa7e6;
+    --cop: #eef7ee; --cop-b: #78b27b;
+    --hum: #fff3e3; --hum-b: #e0a04e;
+    --mem: #efe9ff; --mem-b: #8b6be0;
+    --accent: #6b47d6; --good: #1f8a4c; --bad: #c0392b;
+    --code-bg: #f0f2f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f131a; --card: #171c26; --ink: #e6eaf2; --muted: #98a3b5; --line: #2b3342;
+      --app: #16263f; --app-b: #4a78b8;
+      --cop: #15291a; --cop-b: #4f8a53;
+      --hum: #33260f; --hum-b: #b5772a;
+      --mem: #251d45; --mem-b: #8d73e6;
+      --accent: #a58cff; --good: #4cc784; --bad: #ef7767;
+      --code-bg: #10151d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px 64px; }
+  header { padding: 40px 0 8px; }
+  h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font-size: 21px; margin: 44px 0 6px; }
+  .lede { color: var(--muted); max-width: 760px; margin: 0; }
+  .pill { display: inline-block; font-size: 12px; padding: 2px 10px; border-radius: 99px;
+    background: var(--mem); color: var(--accent); border: 1px solid var(--mem-b); margin-bottom: 12px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .card h3 { margin: 0 0 4px; font-size: 16px; }
+  .card .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .card p { margin: 6px 0 0; }
+  .card .input { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 13.5px; }
+  .card .input b { color: var(--accent); }
+
+  .diagram-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+  .diagram { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+  .diagram svg { width: 100%; height: auto; display: block; }
+  .steps { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; position: sticky; top: 12px; }
+  .steps ol { list-style: none; margin: 0; padding: 0; counter-reset: s; max-height: 78vh; overflow: auto; }
+  .steps li { padding: 8px 10px 8px 40px; position: relative; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+  .steps li::before { counter-increment: s; content: counter(s); position: absolute; left: 8px; top: 8px;
+    width: 22px; height: 22px; border-radius: 50%; background: var(--line); color: var(--ink);
+    font-size: 12px; display: grid; place-items: center; }
+  .steps li b { display: block; font-size: 13.5px; }
+  .steps li span { color: var(--muted); }
+  .steps li.on, .steps li:hover { background: var(--mem); }
+  .steps li.on::before, .steps li:hover::before { background: var(--accent); color: #fff; }
+  .hint { font-size: 12.5px; color: var(--muted); margin: 8px 4px 2px; }
+
+  svg text { font-family: inherit; fill: var(--ink); }
+  svg .lane { fill: none; stroke: var(--line); stroke-dasharray: 4 4; }
+  svg .lane-t { font-size: 12px; font-weight: 700; letter-spacing: .08em; fill: var(--muted); }
+  svg .node { transition: opacity .15s; cursor: pointer; }
+  svg .node rect, svg .node path { stroke-width: 1.4; }
+  svg .node.app rect { fill: var(--app); stroke: var(--app-b); }
+  svg .node.cop rect { fill: var(--cop); stroke: var(--cop-b); }
+  svg .node.hum rect { fill: var(--hum); stroke: var(--hum-b); }
+  svg .node.mem rect { fill: var(--mem); stroke: var(--mem-b); stroke-width: 2; }
+  svg .node .t { font-size: 12.5px; font-weight: 650; }
+  svg .node .s { font-size: 10.5px; fill: var(--muted); }
+  svg .node .n { fill: var(--accent); }
+  svg .node .nn { fill: #fff; font-size: 10.5px; font-weight: 700; text-anchor: middle; }
+  svg .edge { fill: none; stroke: var(--muted); stroke-width: 1.5; transition: opacity .15s; }
+  svg .edge.mem { stroke: var(--accent); stroke-width: 2; }
+  svg .el { font-size: 10.5px; fill: var(--muted); }
+  svg .el.mem { fill: var(--accent); font-weight: 700; }
+  svg.focus .node, svg.focus .edge, svg.focus .el { opacity: .22; }
+  svg.focus .node.hot, svg.focus .edge.hot, svg.focus .el.hot { opacity: 1; }
+  svg.focus .node.hot rect { stroke: var(--accent); stroke-width: 2.6; }
+
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    overflow: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .logpath { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 14px; font-size: 13px; }
+  .logpath span.b { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; }
+  .logpath span.a { color: var(--muted); }
+
+  .toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+  .toggle button { border: 0; background: var(--card); color: var(--ink); padding: 8px 16px; font: inherit; cursor: pointer; }
+  .toggle button.on { background: var(--accent); color: #fff; }
+  .alert { background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--bad); border-radius: 10px; padding: 14px 16px; }
+  .alert.mem { border-left-color: var(--good); }
+  .alert h4 { margin: 0 0 6px; font-size: 15px; }
+  .alert ul { margin: 6px 0 0 18px; padding: 0; }
+  .alert .rec { background: var(--mem); border: 1px solid var(--mem-b); border-radius: 8px; padding: 8px 10px; margin: 8px 0; font-size: 13.5px; }
+  .bars { display: grid; gap: 8px; margin-top: 4px; }
+  .bar { display: grid; grid-template-columns: 90px 1fr 60px; gap: 10px; align-items: center; font-size: 13px; }
+  .bar i { display: block; height: 16px; border-radius: 4px; background: var(--accent); }
+  .bar.off i { background: var(--bad); }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .three h3 { margin: 0 0 8px; font-size: 15px; }
+  .three ul { margin: 0; padding-left: 18px; }
+  .three li { margin: 4px 0; font-size: 13.5px; }
+  .add h3 { color: var(--good); } .rm h3 { color: var(--bad); } .keep h3 { color: var(--app-b); }
+  footer { margin-top: 40px; color: var(--muted); font-size: 12.5px; }
+
+  @media (max-width: 860px) {
+    .modes, .three, .cols2 { grid-template-columns: 1fr; }
+    .diagram-grid { grid-template-columns: 1fr; }
+    .steps { position: static; }
+    .steps ol { max-height: none; }
+    .bar { grid-template-columns: 70px 1fr 50px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="pill">Design walkthrough</span>
+  <h1>Incident Response Agent that remembers</h1>
+  <p class="lede">Logs are pushed in, the agent watches on its own, and every incident it handles is stored in Hindsight memory. The next time the same thing breaks, the agent recalls what fixed it and says so in the alert.</p>
+</header>
+
+<h2>Who does what</h2>
+<p class="sub">The user does not have to type anything for the core flow. The agent is proactive; people react, approve and teach.</p>
+<div class="modes">
+  <div class="card">
+    <span class="tag">Default</span>
+    <h3>Proactive</h3>
+    <p>Logs stream in, the watcher spots a breach, and the agent recalls past incidents, diagnoses, and posts to Discord before anyone notices.</p>
+    <div class="input"><b>User enters:</b> nothing. They receive an alert with the likely cause and a proposed fix.</div>
+  </div>
+  <div class="card">
+    <span class="tag">On demand</span>
+    <h3>Reactive chat</h3>
+    <p>An engineer asks "why is /todos slow?". Same agent, same log tools, same memory recall, so answers get better over time.</p>
+    <div class="input"><b>User enters:</b> a question, or a preference such as "keep answers short" or "never restart at peak". Preferences are retained.</div>
+  </div>
+  <div class="card">
+    <span class="tag">The learning input</span>
+    <h3>Feedback and approval</h3>
+    <p>On the incident page the human approves or rejects the proposed fix, corrects the root cause, and marks the incident resolved.</p>
+    <div class="input"><b>User enters:</b> clicks and a one-line correction. This is what turns a log into learning.</div>
+  </div>
+</div>
+
+<h2>End-to-end flow</h2>
+<p class="sub">Hover or click a step (or a box) to trace it through the diagram. Purple marks everything that touches Hindsight memory.</p>
+<div class="diagram-grid">
+  <div class="diagram"><svg id="dia" viewBox="0 0 1000 990" role="img" aria-label="End-to-end incident workflow diagram"></svg></div>
+  <div class="steps">
+    <ol id="steps"></ol>
+    <p class="hint">Discord webhooks cannot carry buttons, so the alert links to the incident page where approve and feedback actions live.</p>
+  </div>
+</div>
+
+<h2>How logs reach the agent</h2>
+<p class="sub">Push over plain HTTP. No collector, no query language, no extra containers. Any app can use the same endpoint.</p>
+<div class="logpath">
+  <span class="b">App request or exception</span><span class="a">→</span>
+  <span class="b">tiny log handler (batches, never blocks)</span><span class="a">→</span>
+  <span class="b">POST /ingest/events</span><span class="a">→</span>
+  <span class="b">SQLite events table</span><span class="a">→</span>
+  <span class="b">agent tools (SQL)</span>
+</div>
+<div class="cols2">
+<pre>POST /ingest/events
+[
+  {
+    "ts": "2026-09-28T10:14:03Z",
+    "service": "todo-app",
+    "level": "ERROR",
+    "route": "POST /todos",
+    "status": 500,
+    "duration_ms": 212,
+    "message": "Unhandled ValueError in create_todo",
+    "exception": "ValueError: injected failure"
+  }
+]</pre>
+<pre>-- what the tools compute from the same table
+error_rate  = count(status>=500) / count(*)
+              GROUP BY route, window
+p95_latency = percentile(duration_ms, 0.95)
+              GROUP BY route, window
+recent_logs = WHERE message LIKE '%keyword%'
+slowest     = ORDER BY duration_ms DESC LIMIT n
+-- optional: file-tail adapter and a replay script
+-- for seeding historical incidents</pre>
+</div>
+
+<h2>What judges should see: memory off vs on</h2>
+<p class="sub">The same fault fires a second time. Toggle to compare the alert the on-call engineer receives.</p>
+<div class="toggle" id="tg">
+  <button data-m="off" class="on">Without memory</button>
+  <button data-m="on">With Hindsight memory</button>
+</div>
+<div class="cols2">
+  <div id="alertbox"></div>
+  <div class="card">
+    <h3 style="margin-bottom:10px">Time to resolve, per incident</h3>
+    <div class="bars" id="bars"></div>
+    <p class="note">Illustrative target for the demo storyline, not measured results. The real numbers come from the incident lifecycle (opened → resolved) once built.</p>
+  </div>
+</div>
+
+<h2>Demo storyline (about 3 minutes)</h2>
+<div class="card">
+  <ol style="margin:0;padding-left:20px">
+    <li><b>Setup:</b> Hindsight is pre-loaded with 30 to 50 realistic past incidents.</li>
+    <li><b>Incident 1:</b> inject a 500 storm on <code>POST /todos</code>. No close match, so the RCA is generic. The human approves a fix and the outcome is retained.</li>
+    <li><b>Incident 2:</b> inject the same fault. The alert says "recurrence of INC-1, this fix worked". One click approves it and resolution is much faster.</li>
+    <li><b>Incident 3:</b> inject a new latency fault. The agent recalls a similar but different seeded incident and adapts its advice.</li>
+    <li><b>Close:</b> show the Memory panel, the time-to-resolve trend and a reflected runbook. Repeat with memory off for the contrast.</li>
+  </ol>
+</div>
+
+<h2>What changes from the current repo</h2>
+<div class="three">
+  <div class="card add"><h3>Add</h3><ul>
+    <li>Hindsight retain / recall / reflect wrapper</li>
+    <li>Incident lifecycle and IDs</li>
+    <li>Feedback and approve actions on an incident page</li>
+    <li>Memory panel and time-to-resolve trend</li>
+    <li>Seed history of past incidents</li>
+    <li>Approved remediation via the app admin API</li>
+    <li>Alert dedupe so one ongoing fault is one incident</li>
+    <li><code>/ingest/events</code> plus SQLite log tools</li></ul></div>
+  <div class="card keep"><h3>Keep</h3><ul>
+    <li>Fault-injectable demo app</li>
+    <li>Proactive watcher and thresholds</li>
+    <li>Google ADK agent and tool-grounded RCA format</li>
+    <li>Discord notifier</li>
+    <li>Chat UI and SQLite chat history</li></ul></div>
+  <div class="card rm"><h3>Remove</h3><ul>
+    <li>OTel Collector, Prometheus, Loki, Tempo, Grafana</li>
+    <li>Redis chat cache</li>
+    <li>Chroma RAG over the app README</li>
+    <li>Committed databases, .pyc files and Demo/.env</li>
+    <li><code>Claude outputs/</code> folder and the event-specific service name</li></ul></div>
+</div>
+
+<footer>Generated from the mentor review plan for this repository. Diagram shows the target design, not current behaviour.</footer>
+</div>
+
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg";
+  var svg = document.getElementById("dia");
+
+  // lane columns
+  var lanes = [
+    { x: 10,  w: 270, t: "TARGET APP + MEMORY" },
+    { x: 295, w: 310, t: "COPILOT" },
+    { x: 725, w: 265, t: "ON-CALL HUMAN" }
+  ];
+  var L = 30, M = 310, R = 740, W_L = 230, W_M = 280, W_R = 230, H = 68;
+
+  var nodes = {
+    1:  { x: L, y: 70,  w: W_L, c: "app", t: "App emits events", s: ["every request and exception", "becomes a structured event"] },
+    2:  { x: L, y: 170, w: W_L, c: "app", t: "Log handler batches", s: ["POST /ingest/events", "fire-and-forget, never blocks"] },
+    3:  { x: M, y: 170, w: W_M, c: "cop", t: "Events stored in SQLite", s: ["events table: route, status,", "duration, message, exception"] },
+    4:  { x: M, y: 270, w: W_M, c: "cop", t: "Watcher checks every N min", s: ["error %, p95, slow requests,", "error keywords vs thresholds"] },
+    5:  { x: M, y: 370, w: W_M, c: "cop", t: "Fingerprint + dedupe", s: ["same open incident? update only", "new? open INC-042"] },
+    6:  { x: M, y: 470, w: W_M, c: "mem", t: "Recall from Hindsight", s: ["seen this before? what fixed it?", "who fixed it and how long?"] },
+    7:  { x: M, y: 570, w: W_M, c: "cop", t: "Agent diagnoses", s: ["live log tools + recalled memory", "RCA, proposed fix, confidence"] },
+    8:  { x: M, y: 670, w: W_M, c: "cop", t: "Discord alert with link", s: ["\"Recurrence of INC-017,", "this fix worked last time\""] },
+    9:  { x: R, y: 670, w: W_R, c: "hum", t: "Opens incident page", s: ["reads RCA and recalled", "history in one place"] },
+    10: { x: R, y: 770, w: W_R, c: "hum", t: "Approve, correct or ack", s: ["approve fix / RCA wrong +", "actual cause / mark resolved"] },
+    11: { x: M, y: 770, w: W_M, c: "cop", t: "Remediate", s: ["call the app admin API", "(human-approved only)"] },
+    12: { x: M, y: 870, w: W_M, c: "cop", t: "Recovery confirmed", s: ["watcher sees healthy window,", "incident RESOLVED, MTTR stored"] },
+    13: { x: R, y: 870, w: W_R, c: "hum", t: "Memory panel", s: ["recalls used, time-to-resolve", "trend, reflected runbooks"] }
+  };
+
+  // Hindsight box (left lane, tall)
+  var HS = { x: L, y: 450, w: W_L, h: 470 };
+
+  var steps = [
+    { n: [1], t: "App emits events", d: "Each request and exception becomes one structured JSON event." },
+    { n: [2, 3], t: "Logs pushed to the Copilot", d: "A small handler batches events and POSTs them to /ingest/events. They land in SQLite." },
+    { n: [4], t: "Watcher runs on a timer", d: "Compares error rate, p95 latency, slow requests and error keywords with thresholds. No breach means sleep." },
+    { n: [5], t: "Fingerprint and dedupe", d: "Same fingerprint as an open incident: update it, do not page again. Otherwise open a new incident." },
+    { n: [6, "H"], t: "Recall from memory", d: "Before the LLM runs, ask Hindsight: seen this before? What fixed it and how long did it take?", mem: true },
+    { n: [7], t: "Agent diagnoses", d: "Runs the log tools for live evidence and combines it with recalled history: RCA, proposed fix, confidence." },
+    { n: [8, 9], t: "Human is alerted", d: "Discord shows the summary and links to the incident page." },
+    { n: [10], t: "Human approves or corrects", d: "Approve the fix, say the RCA was wrong and give the real cause, or just acknowledge." },
+    { n: [11, 12], t: "Fix applied and verified", d: "With approval, call the app admin API. The watcher confirms recovery and the incident is resolved with its MTTR." },
+    { n: [12, "H"], t: "Retain the outcome", d: "Symptoms, RCA, fix, result, MTTR and the human feedback are stored in Hindsight.", mem: true },
+    { n: ["H", 13], t: "Reflect and show", d: "Periodically Hindsight reflects patterns into runbook insights, shown in the Memory panel.", mem: true }
+  ];
+
+  // edges: id, points, memory?, label
+  var edges = [
+    { f: [1, 2],  p: "M145 138 L145 170" },
+    { f: [2, 3],  p: "M260 204 L310 204" },
+    { f: [3, 4],  p: "M450 238 L450 270" },
+    { f: [4, 5],  p: "M450 338 L450 370" },
+    { f: [5, 6],  p: "M450 438 L450 470" },
+    { f: [6, "H"], p: "M310 504 L260 504", mem: true, both: true, lab: "recall", lx: 262, ly: 494 },
+    { f: [6, 7],  p: "M450 538 L450 570" },
+    { f: [7, 8],  p: "M450 638 L450 670" },
+    { f: [8, 9],  p: "M590 704 L740 704", lab: "link", lx: 650, ly: 694 },
+    { f: [9, 10], p: "M855 738 L855 770" },
+    { f: [10, 11], p: "M740 804 L590 804", lab: "approve", lx: 640, ly: 794 },
+    { f: [11, 12], p: "M450 838 L450 870" },
+    { f: [12, "H"], p: "M310 904 L260 904", mem: true, lab: "retain", lx: 262, ly: 894 },
+    { f: [12, 13], p: "M590 904 L740 904", lab: "shown in UI", lx: 626, ly: 894 },
+    { f: [10, "H"], p: "M855 838 L855 852 L275 852 L275 852 L260 852", mem: true, dash: true, lab: "feedback retained", lx: 600, ly: 846 }
+  ];
+
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  var defs = el("defs", {}, svg);
+  ["m", "g"].forEach(function (id) {
+    var mk = el("marker", { id: "ar-" + id, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" }, defs);
+    el("path", { d: "M0 0 L10 5 L0 10 z", fill: id === "m" ? "var(--accent)" : "var(--muted)" }, mk);
+  });
+
+  lanes.forEach(function (l) {
+    el("rect", { class: "lane", x: l.x, y: 44, width: l.w, height: 935, rx: 12 }, svg);
+    var t = el("text", { class: "lane-t", x: l.x + l.w / 2, y: 34, "text-anchor": "middle" }, svg);
+    t.textContent = l.t;
+  });
+
+  var registry = {}; // id -> [elements]
+  function reg(id, e) { (registry[id] = registry[id] || []).push(e); }
+
+  // Hindsight node
+  var hg = el("g", { class: "node mem", "data-id": "H" }, svg);
+  el("rect", { x: HS.x, y: HS.y, width: HS.w, height: HS.h, rx: 14 }, hg);
+  var ht = el("text", { class: "t", x: HS.x + HS.w / 2, y: HS.y + 208, "text-anchor": "middle", style: "font-size:16px" }, hg);
+  ht.textContent = "HINDSIGHT";
+  var hl = ["memory bank for incidents", "", "RETAIN  symptoms, RCA, fix,", "outcome, MTTR, feedback", "", "RECALL  similar past incidents", "and what worked", "", "REFLECT  patterns to runbooks", "(e.g. \"fix X worked 4 of 5\")", "", "Pre-seeded with 30-50", "realistic past incidents"];
+  hl.forEach(function (line, i) {
+    var t = el("text", { class: "s", x: HS.x + HS.w / 2, y: HS.y + 232 + i * 15, "text-anchor": "middle" }, hg);
+    t.textContent = line;
+  });
+  reg("H", hg);
+
+  // edges first (under nodes)
+  edges.forEach(function (e) {
+    var attrs = { class: "edge" + (e.mem ? " mem" : ""), d: e.p, "marker-end": "url(#ar-" + (e.mem ? "m" : "g") + ")" };
+    if (e.both) attrs["marker-start"] = "url(#ar-m)";
+    if (e.dash) attrs["stroke-dasharray"] = "5 4";
+    var p = el("path", attrs, svg);
+    e.f.forEach(function (id) { reg(id, p); });
+    if (e.lab) {
+      var t = el("text", { class: "el" + (e.mem ? " mem" : ""), x: e.lx, y: e.ly }, svg);
+      t.textContent = e.lab;
+      e.f.forEach(function (id) { reg(id, t); });
+    }
+  });
+
+  Object.keys(nodes).forEach(function (id) {
+    var n = nodes[id];
+    var g = el("g", { class: "node " + n.c, "data-id": id }, svg);
+    el("rect", { x: n.x, y: n.y, width: n.w, height: H, rx: 10 }, g);
+    el("circle", { class: "n", cx: n.x + 14, cy: n.y + 16, r: 9 }, g);
+    var nn = el("text", { class: "nn", x: n.x + 14, y: n.y + 20 }, g);
+    nn.textContent = id;
+    var t = el("text", { class: "t", x: n.x + 30, y: n.y + 20 }, g);
+    t.textContent = n.t;
+    n.s.forEach(function (line, i) {
+      var s = el("text", { class: "s", x: n.x + 14, y: n.y + 40 + i * 14 }, g);
+      s.textContent = line;
+    });
+    reg(id, g);
+  });
+
+  // steps list
+  var ol = document.getElementById("steps");
+  var lis = [];
+  steps.forEach(function (s, i) {
+    var li = document.createElement("li");
+    li.innerHTML = "<b>" + s.t + "</b><span>" + s.d + "</span>";
+    li.addEventListener("mouseenter", function () { focus(i); });
+    li.addEventListener("mouseleave", function () { if (pinned === -1) clear(); else focus(pinned); });
+    li.addEventListener("click", function () { pinned = (pinned === i) ? -1 : i; if (pinned === -1) clear(); else focus(pinned); });
+    ol.appendChild(li);
+    lis.push(li);
+  });
+
+  var pinned = -1;
+  function clear() {
+    svg.classList.remove("focus");
+    Array.prototype.forEach.call(svg.querySelectorAll(".hot"), function (e) { e.classList.remove("hot"); });
+    lis.forEach(function (l) { l.classList.remove("on"); });
+  }
+  function focus(i) {
+    clear();
+    svg.classList.add("focus");
+    lis[i].classList.add("on");
+    var ids = steps[i].n;
+    ids.forEach(function (id) { (registry[id] || []).forEach(function (e) { e.classList.add("hot"); }); });
+    // include edges that connect two focused ids
+    edges.forEach(function (e, k) {
+      if (ids.indexOf(e.f[0]) > -1 && ids.indexOf(e.f[1]) > -1) {
+        (registry[e.f[0]] || []).concat(registry[e.f[1]] || []).forEach(function (x) {
+          if (x.tagName === "path" || x.tagName === "text" && x.classList.contains("el")) x.classList.add("hot");
+        });
+      }
+    });
+  }
+
+  // clicking a node focuses the first step that contains it
+  Array.prototype.forEach.call(svg.querySelectorAll(".node"), function (g) {
+    g.addEventListener("click", function () {
+      var id = g.getAttribute("data-id");
+      var idx = -1;
+      steps.forEach(function (s, i) { if (idx === -1 && s.n.map(String).indexOf(id) > -1) idx = i; });
+      if (idx > -1) { pinned = idx; focus(idx); lis[idx].scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    });
+  });
+  svg.addEventListener("click", function (e) { if (e.target === svg) { pinned = -1; clear(); } });
+
+  // memory on/off comparison
+  var alertBox = document.getElementById("alertbox");
+  var bars = document.getElementById("bars");
+  var views = {
+    off: {
+      alert: '<div class="alert"><h4>ALERT: error rate 34% on POST /todos</h4>' +
+        '<div>Likely cause: unhandled ValueError in the create handler. Cause not confirmed.</div>' +
+        '<ul><li>Checked logs, latency and slowest requests</li><li>Suggests reviewing recent changes and adding validation</li><li>No mention that this happened before</li></ul>' +
+        '<div class="note">Generic every time. The engineer starts the investigation from zero.</div></div>',
+      bars: [["Incident 1", 100, "42 min"], ["Incident 2", 96, "40 min"], ["Incident 3", 98, "41 min"]],
+      cls: "off"
+    },
+    on: {
+      alert: '<div class="alert mem"><h4>ALERT: error rate 34% on POST /todos</h4>' +
+        '<div class="rec"><b>Recurrence of INC-001</b> (2nd time, same ValueError signature). Last fix: disable the injected fault, then add input validation. Resolved in 6 min.</div>' +
+        '<ul><li>Confidence: high, matches 1 past incident and 2 seeded ones</li><li>Proposed action: apply the same fix (approve on the incident page)</li><li>Skips hypotheses that were ruled out last time</li></ul>' +
+        '<div class="note">Personal to this system, and it gets sharper with every incident.</div></div>',
+      bars: [["Incident 1", 100, "42 min"], ["Incident 2", 15, "6 min"], ["Incident 3", 10, "4 min"]],
+      cls: "on"
+    }
+  };
+  function render(m) {
+    var v = views[m];
+    alertBox.innerHTML = v.alert;
+    bars.innerHTML = v.bars.map(function (b) {
+      return '<div class="bar ' + v.cls + '"><span>' + b[0] + '</span><div><i style="width:' + b[1] + '%"></i></div><span>' + b[2] + '</span></div>';
+    }).join("");
+    Array.prototype.forEach.call(document.querySelectorAll("#tg button"), function (btn) {
+      btn.classList.toggle("on", btn.getAttribute("data-m") === m);
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("#tg button"), function (btn) {
+    btn.addEventListener("click", function () { render(btn.getAttribute("data-m")); });
+  });
+  render("off");
+})();
+</script>
+</body>
+</html>

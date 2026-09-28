@@ -1,0 +1,36 @@
+# Local Hindsight for the M0 spike (and the seed of the real compose file).
+#   cd spike && cp .env.example .env   # add GEMINI_API_KEY
+#   docker compose up -d
+# API: http://127.0.0.1:8888   UI: http://127.0.0.1:9999
+# Both ports are bound to localhost only: Hindsight has no auth of its own here.
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:latest
+    container_name: hindsight-spike
+    ports:
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:9999:9999"
+    environment:
+      # The image defaults to the openai provider, so provider/model must be set explicitly.
+      # Gemini free tier proved unreliable in the spike (5 req/min on gemini-3.5-flash, 503 overloads on
+      # gemini-3.1-flash-lite). Groq is supported natively; see spike/.env.example.
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-gemini}
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-gemini-3.5-flash}
+      HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-${GEMINI_API_KEY:?set HINDSIGHT_LLM_API_KEY (or GEMINI_API_KEY) in spike/.env}}
+      # Reflect makes several LLM calls; on a rate-limited free tier give it its own model (its own token
+      # budget). Defaults to the main model, so nothing changes unless HINDSIGHT_REFLECT_LLM_MODEL is set.
+      HINDSIGHT_API_REFLECT_LLM_PROVIDER: ${HINDSIGHT_REFLECT_LLM_PROVIDER:-${HINDSIGHT_LLM_PROVIDER:-gemini}}
+      HINDSIGHT_API_REFLECT_LLM_MODEL: ${HINDSIGHT_REFLECT_LLM_MODEL:-${HINDSIGHT_LLM_MODEL:-gemini-3.5-flash}}
+      HINDSIGHT_API_REFLECT_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-${GEMINI_API_KEY}}
+      # Groq: the image defaults to service_tier=auto, which free orgs are not allowed to use.
+      HINDSIGHT_API_LLM_GROQ_SERVICE_TIER: ${HINDSIGHT_LLM_GROQ_SERVICE_TIER:-on_demand}
+      # Embeddings: 'local' (default here) needs no key; a small model is downloaded on first start.
+      # Valid providers include local, onnx, tei, openai, google, cohere, litellm (NOT 'gemini').
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: ${HINDSIGHT_EMBEDDINGS_PROVIDER:-local}
+      HINDSIGHT_API_EMBEDDINGS_GEMINI_API_KEY: ${GEMINI_API_KEY}
+    volumes:
+      - hindsight-data:/home/hindsight/.pg0
+    restart: unless-stopped
+
+volumes:
+  hindsight-data:

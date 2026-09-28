@@ -1,6 +1,8 @@
+> **Historical document.** This describes the original architecture (Prometheus, Loki, Tempo, Grafana, OTel, Redis, Chroma RAG), which has been replaced by push-based ingest. See `readme.md` and `docs/DESIGN.md` for the current design.
+
 # SRE Copilot (ADK) — Project Overview
 
-> This document is a self-contained technical/functional brief of this repository, written so a fresh Claude Code session (or a new hackathon team) can understand the system without reading every file first.
+> This document is a self-contained technical/functional brief of this repository, written so a fresh Claude Code session (or a new contributor) can understand the system without reading every file first.
 
 ## 1. Elevator Pitch
 
@@ -96,7 +98,7 @@ SRE-Copilot-ADK/
 │   ├── pyproject.toml / requirements.txt
 │   └── .env.example
 │
-├── Claude outputs/                  # Prior hackathon collateral (one-pagers, technical brief PDFs, draft reply)
+├── Claude outputs/                  # Earlier collateral (removed from the repo) (one-pagers, technical brief PDFs, draft reply)
 └── readme.md                        # Top-level setup instructions
 ```
 
@@ -238,7 +240,7 @@ REST endpoints backing the chat frontend:
 | Variable | Default | Purpose |
 |---|---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector:4317` | Where the app exports traces/metrics |
-| `OTEL_SERVICE_NAME` | `hackathon-app` (example env) — **note:** actual `service.name` resource attribute is hardcoded to `todo-app` in `main.py`, so this env var is currently unused by code | |
+| `OTEL_SERVICE_NAME` | `todo-app` (example env) — **note:** actual `service.name` resource attribute is hardcoded to `todo-app` in `main.py`, so this env var is currently unused by code | |
 | `GF_AUTH_ANONYMOUS_ENABLED` / `GF_AUTH_ANONYMOUS_ORG_ROLE` | `true` / `Admin` | Grafana anonymous admin access for the demo |
 
 ### Ports
@@ -262,11 +264,11 @@ docker-compose up -d                     # copilot + redis
 ```
 Then: Demo UI `http://localhost:8000`, fault admin `http://localhost:8000/admin/faults`, Grafana `http://localhost:3000`, Copilot chat `http://localhost:8001`.
 
-## 10. Known Gaps / Ideas for Extension (useful hackathon starting points)
+## 10. Known Gaps / Ideas for Extension (useful starting points)
 - **Single target service**: the Copilot is currently wired to one `APP_SERVICE_NAME` via env config — extending to multi-service/multi-tenant monitoring would mean parameterizing tools by service name per-request rather than at process startup.
 - **No auto-remediation**: the agent only diagnoses (RCA) and notifies — it doesn't take corrective action (e.g., auto-rollback, auto-restart, auto-toggle a feature flag). `tools.py` imports `subprocess` but nothing currently uses it for remediation — a natural extension point.
 - **Single notification channel**: only Discord is wired up; Slack/PagerDuty/email would follow the same pattern as `notifier.py`.
 - **In-memory ADK sessions**: `InMemorySessionService` means chat/agent session state doesn't survive a Copilot restart (persisted chat *history* is separate and does survive, in SQLite).
 - **RAG corpus is small/static**: only `data/reference_docs/*.md` + root README are ingested once at startup (skipped if the Chroma store dir already exists) — no incremental re-indexing if docs change.
 - **`OTEL_SERVICE_NAME` env var in Demo `.env.example` is dead** — the actual service name is hardcoded (`todo-app`) in `Demo/app/main.py`; worth reconciling if forking this app for a new demo target.
-- **Fault injection is Demo-only** — a real hackathon extension could add a generic fault-injection sidecar/library so *any* target app gets the same "break me" admin panel without rewriting it.
+- **Fault injection is Demo-only** — a real extension could add a generic fault-injection sidecar/library so *any* target app gets the same "break me" admin panel without rewriting it.
