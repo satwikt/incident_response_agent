@@ -1,0 +1,21 @@
+# secrets and local config
+.env
+.env.*
+!.env.example
+
+# databases and vector stores (generated at runtime)
+*.db
+*.sqlite
+*.sqlite3
+Copilot/data/chroma_store/
+Copilot/agent/.adk/
+
+# python
+__pycache__/
+*.py[oc]
+.venv/
+*.egg-info/
+
+# local-only material (not part of the project)
+Claude outputs/
+*.docx
