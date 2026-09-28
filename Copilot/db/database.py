@@ -1,10 +1,12 @@
-"""SQLite database initialization for chat conversation history."""
+"""SQLite database for chat history and ingested telemetry events."""
 
 import os
 import sqlite3
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "copilot.db")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+from agent.config import COPILOT_DB_PATH
+
+DB_PATH = COPILOT_DB_PATH
+os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
 
 
 def get_db_connection():
@@ -41,6 +43,27 @@ def init_db():
         )
         """
     )
+    # Ingested telemetry. ``id`` is "<service>:<client id>" so one service cannot suppress another's events.
+    # Time windows use received_at (server clock); ts is the client's clock, kept for display only.
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS events (
+            pk INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL UNIQUE,
+            service TEXT NOT NULL,
+            ts INTEGER NOT NULL,
+            received_at INTEGER NOT NULL,
+            level TEXT NOT NULL,
+            route TEXT,
+            status INTEGER,
+            duration_ms REAL,
+            message TEXT,
+            exception TEXT
+        )
+        """
+    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_svc_recv ON events (service, received_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_svc_route_recv ON events (service, route, received_at)")
     conn.commit()
     conn.close()
 

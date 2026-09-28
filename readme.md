@@ -1,78 +1,76 @@
-# SRE Copilot ADK
+# Incident Response Agent
 
-This repository contains the SRE Copilot (built on Google GenAI) and a Demo application to showcase proactive monitoring, anomaly detection, and automated root cause analysis.
+An on-call assistant that watches a running application's telemetry, notices when something breaks, diagnoses it with
+live evidence, and (in progress) **remembers every incident it has handled** so the next similar failure is diagnosed
+faster. Built on Google ADK, with [Hindsight](https://github.com/vectorize-io/hindsight) as the memory layer.
 
-## Prerequisites
+> **Status: work in progress.** Telemetry ingest, detection and the demo scenarios are done and tested. Incident
+> lifecycle, Hindsight memory, the approval workflow and the incident UI are next. See
+> [`docs/DESIGN.md`](docs/DESIGN.md) for the design, [`docs/TEST_LOG.md`](docs/TEST_LOG.md) for what has been verified,
+> and [`docs/OPEN_DEFECTS.md`](docs/OPEN_DEFECTS.md) for what is still open.
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop) installed and running.
-- A **Google GenAI API Key** for the SRE Copilot.
+## How it works today
 
----
+```
+demo app ──(one event per request, batched, never blocks)──▶ POST /ingest/events ──▶ SQLite
+                                                                                      │
+                                              watcher (every N s): error rate, p95, slow requests, keywords
+                                                                                      │ breach
+                                                                agent (Google ADK) + read-only tools ──▶ RCA ──▶ Discord
+```
 
-## 1. Setting up the Demo Application
+- **`Demo/`** is a small Todo API that can be broken on purpose. It has five injectable causes, each with exactly one
+  correct fix and some wrong ones: `pool_exhausted` (flush_pool), `bad_config` (rollback_config), `bad_deploy`
+  (rollback_release), `memory_leak` (restart_worker), `slow_downstream` (enable_fallback). `bad_config` and `bad_deploy`
+  look identical except for the release and config revision in the log context.
+- **`Copilot/`** stores pushed events, detects breaches, and runs the agent. Its tools are read-only.
+- Two containers, no observability stack to run: applications simply push events over HTTP with an API key.
 
-The Demo application is a mock FastAPI service instrumented with OpenTelemetry. It includes a complete observability stack (Prometheus, Loki, Tempo, Grafana).
+## Run it
 
-1. Navigate to the `Demo` directory:
-   ```bash
-   cd Demo
-   ```
-2. Start the Demo stack using Docker Compose:
-   ```bash
-   docker-compose up -d
-   ```
-   *This will start the FastAPI application on `http://localhost:8000` along with the observability suite.*
+Prerequisite: Docker Desktop.
 
----
+```bash
+cp .env.example .env
+# fill in INGEST_KEY, CHAOS_KEY, OPS_KEY (each: openssl rand -hex 24) and, for the agent, an LLM key
+docker compose up -d --build
+```
 
-## 2. Setting up the SRE Copilot
+- Demo app: http://127.0.0.1:8000 (Todo UI)
+- Copilot: http://127.0.0.1:8001
+- Both ports are bound to localhost only. The Copilot chat endpoints are not authenticated yet (see the open defects),
+  so do not expose it beyond your machine.
 
-The Copilot runs alongside the Demo app, actively monitoring its telemetry and alerting on anomalies.
+Break something and watch the watcher react (keys from your `.env`):
 
-1. Navigate to the `Copilot` directory:
-   ```bash
-   cd Copilot
-   ```
-2. Set up the environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-3. Open the `.env` file and configure the following:
-   
-   - **`GOOGLE_API_KEY`**: Provide your Google GenAI API key.
-   - **`APP_SERVICE_NAME`**: Ensure this matches the target application's service name (the default for the demo is `todo-app`).
+```bash
+curl -X POST "http://127.0.0.1:8000/chaos/bad_deploy/post_todos?enabled=true" -H "X-Api-Key: $CHAOS_KEY"
+# generate some traffic, then:
+docker compose logs -f copilot        # "Watcher: 1 breach(es) detected ..."
+curl -X POST http://127.0.0.1:8000/ops/rollback_release -H "X-Api-Key: $OPS_KEY"   # the right fix
+curl -X POST http://127.0.0.1:8000/chaos/reset -H "X-Api-Key: $CHAOS_KEY"          # back to normal
+```
 
-   **Optional Configurations:**
-   - **Discord Notifications**: 
-     - Create a webhook in Discord (Channel Settings → Integrations → Webhooks → New Webhook → Copy URL).
-     - Set `DISCORD_WEBHOOK_URL=your_webhook_url`. 
-     - *Note: If `DISCORD_WEBHOOK_URL` is left empty, the Copilot will simply skip sending notifications without erroring out.*
-   - **Alert Thresholds**: You can tune the proactive watcher using the following variables:
-     - `ALERT_ERROR_RATE_THRESHOLD`: The percentage error rate required to trigger an alert.
-     - `ALERT_LATENCY_P95_MS`: P95 latency threshold in milliseconds.
-     - `ALERT_SLOW_TRACE_COUNT` & `ALERT_SLOW_TRACE_MIN_MS`: Threshold for tracking slow request traces.
-     - `ALERT_LOG_KEYWORDS`: Keywords in logs that trigger alerts (e.g., `ERROR,CRITICAL`).
+## Tests
 
-4. Start the SRE Copilot stack:
-   ```bash
-   docker-compose up -d
-   ```
+No local Python needed; the suites run in a container:
 
----
+```bash
+docker run --rm -v "$PWD/Demo:/w" -w /w python:3.13-slim sh -c \
+  "pip install -q fastapi==0.115.0 -r requirements-dev.txt && python -m pytest -q"
+docker run --rm -v "$PWD/Copilot:/w" -w /w python:3.13-slim sh -c \
+  "pip install -q fastapi pydantic python-dotenv -r requirements-dev.txt && python -m pytest -q"
+```
 
-## 3. Running the Demo
+CI (`.github/workflows/ci.yml`) runs both suites plus repository hygiene checks.
 
-Once both stacks are running, you can interact with the environment using the following URLs:
+## Documents
 
-- **Demo Application**: `http://localhost:8000`
-- **Grafana Dashboard**: `http://localhost:3000` (Login is not required, anonymous admin access is enabled)
-- **Copilot API**: `http://localhost:8001`
-
-### Testing the Copilot (Injecting Faults)
-
-To trigger the SRE Copilot into action, you can inject deliberate faults into the Demo Application via the Admin UI. This simulates realistic production incidents.
-
-1. Open `http://localhost:8000/admin/faults` in your browser.
-2. Select a fault type (e.g., Memory Leak, Database Latency, or 500 Error Spikes).
-3. Wait for the Copilot's scheduled watcher to pick up the anomaly based on the alert thresholds. 
-4. The Copilot will generate a Root Cause Analysis (RCA) and send an alert to your configured Discord Webhook.
+| File | What |
+|---|---|
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Architecture, memory design, security model, edge cases, acceptance criteria |
+| [`docs/TEST_LOG.md`](docs/TEST_LOG.md) | What was verified live, by whom, and with what confidence |
+| [`docs/OPEN_DEFECTS.md`](docs/OPEN_DEFECTS.md) | Every open defect, limitation and carried-forward item |
+| [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) | Accepted trade-offs |
+| [`docs/TESTER_BRIEFS.md`](docs/TESTER_BRIEFS.md) | Scenario briefs used in the independent testing rounds |
+| [`spike/`](spike) | Local Hindsight setup and the spike scripts that measured its behaviour |

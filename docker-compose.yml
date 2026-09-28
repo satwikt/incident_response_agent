@@ -1,0 +1,45 @@
+# Two services: the monitored demo app and the Copilot. (Hindsight joins in M3.)
+# Each container receives only the variables it needs, so the Copilot never sees the chaos key.
+services:
+  demo:
+    build: ./Demo/app
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      SERVICE_NAME: todo-app
+      COPILOT_INGEST_URL: http://copilot:8001/ingest/events
+      INGEST_KEY: ${INGEST_KEY:?set INGEST_KEY in .env}
+      CHAOS_KEY: ${CHAOS_KEY:-}
+      OPS_KEY: ${OPS_KEY:-}
+      FAULT_ERROR_RATE: ${FAULT_ERROR_RATE:-0.3}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      POOL_WAIT_S: ${POOL_WAIT_S:-2.0}
+      MEM_LIMIT_MB: ${MEM_LIMIT_MB:-150}
+      LATENCY_MIN_S: ${LATENCY_MIN_S:-2.0}
+      LATENCY_MAX_S: ${LATENCY_MAX_S:-5.0}
+    networks: [internal]
+
+  copilot:
+    build: ./Copilot
+    ports:
+      - "127.0.0.1:8001:8001"
+    environment:
+      APP_SERVICE_NAME: todo-app
+      INGEST_KEYS: todo-app:${INGEST_KEY:?set INGEST_KEY in .env}
+      AGENT_MODEL: ${AGENT_MODEL:-gemini-3.5-flash}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      WATCHER_INTERVAL_MINUTES: ${WATCHER_INTERVAL_MINUTES:-1}
+      ALERT_ERROR_RATE_THRESHOLD: ${ALERT_ERROR_RATE_THRESHOLD:-10}
+      ALERT_LATENCY_P95_MS: ${ALERT_LATENCY_P95_MS:-1000}
+      MIN_REQUESTS: ${MIN_REQUESTS:-20}
+    volumes:
+      - copilot-data:/app/data
+    networks: [internal]
+
+volumes:
+  copilot-data:
+
+networks:
+  internal:
+    driver: bridge

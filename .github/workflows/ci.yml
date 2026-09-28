@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  demo-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        working-directory: Demo
+        run: pip install fastapi==0.115.0 -r requirements-dev.txt
+      - name: Test
+        working-directory: Demo
+        run: python -m pytest -q
+
+  copilot-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install (the tests do not need Google ADK)
+        working-directory: Copilot
+        run: pip install fastapi pydantic python-dotenv -r requirements-dev.txt
+      - name: Test
+        working-directory: Copilot
+        run: python -m pytest -q
+
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: No event-specific wording in tree or commit messages
+        run: |
+          if git grep -niE 'hack[a]thon' -- . ':!*.docx'; then echo "found event-specific wording"; exit 1; fi
+          if git log --all -i -E --grep='hack[a]thon' --oneline | grep .; then echo "found in commit messages"; exit 1; fi
+      - name: No secrets, databases, bytecode or env files tracked
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$|\.db$|\.sqlite3?$|\.pyc$|chroma_store/'; then
+            echo "forbidden file tracked"; exit 1
+          fi
+      - name: Compose stays small (at most 3 services, none from the removed stack)
+        run: |
+          services=$(INGEST_KEY=ci docker compose config --services)
+          echo "$services"
+          test "$(echo "$services" | wc -l)" -le 3
+          if echo "$services" | grep -Eiq 'prometheus|loki|tempo|grafana|otel|redis'; then echo "forbidden service"; exit 1; fi
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

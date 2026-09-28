@@ -26,6 +26,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content, Part
 
 from .agent import root_agent
+from .detect import build_summary, evaluate
 from .notifier import send_discord_alert
 from .thresholds import thresholds
 from .tools import (
@@ -33,7 +34,7 @@ from .tools import (
     get_latency,
     get_recent_logs,
     get_service_health,
-    get_slow_traces,
+    get_slow_requests,
 )
 
 log = logging.getLogger("copilot.watcher")
@@ -45,65 +46,6 @@ _runner = Runner(
     app_name="sre_copilot_watcher",
     session_service=_session_service,
 )
-
-
-# ── Threshold evaluation ─────────────────────────────────────────────────────
-
-def _evaluate(
-    health: dict,
-    error_data: dict,
-    latency_data: dict,
-    traces_data: dict,
-    logs_data: dict,
-) -> List[str]:
-    """Return a list of human-readable breach descriptions (empty = all clear)."""
-    breaches: List[str] = []
-
-    # 1. Service health
-    status = health.get("status", "unknown")
-    if status != "up":
-        breaches.append(
-            f"Service health is '{status}' "
-            f"(HTTP {health.get('http_status', 'N/A')})"
-        )
-
-    # 2. Error rate per route
-    for route in error_data.get("by_route", []):
-        pct = route.get("error_percent", 0.0)
-        if pct >= thresholds.error_rate_pct:
-            breaches.append(
-                f"Error rate on '{route['http_route']}' is {pct:.1f}% "
-                f"(threshold: {thresholds.error_rate_pct}%)"
-            )
-
-    # 3. p95 latency per route
-    for route in latency_data.get("by_route", []):
-        ms = route.get("p95_latency_ms")
-        if ms is not None and ms >= thresholds.latency_p95_ms:
-            breaches.append(
-                f"p95 latency on '{route['http_route']}' is {ms:.0f}ms "
-                f"(threshold: {thresholds.latency_p95_ms}ms)"
-            )
-
-    # 4. Slow traces
-    trace_count = traces_data.get("trace_count", 0)
-    if trace_count >= thresholds.slow_trace_count:
-        breaches.append(
-            f"{trace_count} slow traces detected "
-            f"(threshold: {thresholds.slow_trace_count}, "
-            f"min duration: {thresholds.slow_trace_min_ms}ms)"
-        )
-
-    # 5. Error keywords in logs
-    match_count = logs_data.get("match_count", 0)
-    keyword = logs_data.get("keyword", "")
-    if match_count > 0:
-        breaches.append(
-            f"{match_count} log line(s) matched error keywords "
-            f"'{keyword}' in the last {thresholds.log_scan_minutes}m"
-        )
-
-    return breaches
 
 
 # ── RCA generation via ADK agent ─────────────────────────────────────────────
@@ -150,39 +92,6 @@ async def _generate_rca(breaches: List[str], telemetry_summary: str) -> str:
     return "\n".join(rca_parts) or "Agent returned no RCA text."
 
 
-# ── Telemetry helpers ─────────────────────────────────────────────────────────
-
-def _build_telemetry_summary(
-    health: dict,
-    error_data: dict,
-    latency_data: dict,
-    traces_data: dict,
-    logs_data: dict,
-) -> str:
-    """Build a concise plain-text telemetry snapshot for the agent prompt."""
-    lines = [
-        f"Health: {health.get('status', 'unknown')}",
-        f"Total errors: {error_data.get('total_error_count', 'N/A')}",
-    ]
-    for r in error_data.get("by_route", [])[:5]:
-        lines.append(
-            f"  Route {r['http_route']}: {r['error_percent']}% errors"
-        )
-    for r in latency_data.get("by_route", [])[:5]:
-        lines.append(
-            f"  Route {r['http_route']}: p95={r.get('p95_latency_ms')}ms"
-        )
-    lines.append(f"Slow traces: {traces_data.get('trace_count', 0)}")
-    lines.append(
-        f"Error log matches: {logs_data.get('match_count', 0)} "
-        f"(keyword: {logs_data.get('keyword', '')})"
-    )
-    sample = logs_data.get("sample_lines", [])[:3]
-    for s in sample:
-        lines.append(f"  Log: {s[:120]}")
-    return "\n".join(lines)
-
-
 # ── Main poll cycle ───────────────────────────────────────────────────────────
 
 async def _poll_once() -> None:
@@ -191,15 +100,15 @@ async def _poll_once() -> None:
 
     # All lookback windows = interval_minutes so each poll covers exactly
     # the time since the last one — no gaps, no stale historical incidents.
-    window = int(thresholds.interval_minutes)
+    window = thresholds.interval_minutes
 
     # Collect all telemetry in parallel (run blocking httpx calls in executor)
     loop = asyncio.get_event_loop()
-    health, error_data, latency_data, traces_data, logs_data = await asyncio.gather(
+    health, error_data, latency_data, slow_data, logs_data = await asyncio.gather(
         loop.run_in_executor(None, get_service_health),
         loop.run_in_executor(None, get_error_rate, window),
         loop.run_in_executor(None, get_latency, window),
-        loop.run_in_executor(None, get_slow_traces, thresholds.slow_trace_min_ms, window),
+        loop.run_in_executor(None, get_slow_requests, thresholds.slow_request_min_ms, window),
         loop.run_in_executor(
             None,
             get_recent_logs,
@@ -209,7 +118,7 @@ async def _poll_once() -> None:
         ),
     )
 
-    breaches = _evaluate(health, error_data, latency_data, traces_data, logs_data)
+    breaches = evaluate(health, error_data, latency_data, slow_data, logs_data, thresholds)
 
     if not breaches:
         log.info("Watcher: all clear — no thresholds breached.")
@@ -217,9 +126,7 @@ async def _poll_once() -> None:
 
     log.warning("Watcher: %d breach(es) detected: %s", len(breaches), breaches)
 
-    telemetry_summary = _build_telemetry_summary(
-        health, error_data, latency_data, traces_data, logs_data
-    )
+    telemetry_summary = build_summary(health, error_data, latency_data, slow_data, logs_data)
 
     # Generate RCA via ADK agent (async)
     log.info("Watcher: invoking ADK agent for RCA generation...")
@@ -232,7 +139,7 @@ async def _poll_once() -> None:
         send_discord_alert,
         breaches,
         rca_text,
-        int(thresholds.interval_minutes),
+        thresholds.interval_minutes,
     )
 
 

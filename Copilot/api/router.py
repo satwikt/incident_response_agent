@@ -1,6 +1,5 @@
-"""FastAPI router — Google ADK chat sessions with SQLite persistence and Redis cache."""
+"""FastAPI router: Google ADK chat sessions with SQLite persistence."""
 
-import json
 import logging
 from typing import List
 
@@ -11,7 +10,6 @@ from google.genai import types
 
 from agent.agent import root_agent
 from db.database import get_db_connection
-from db.redis_client import redis_client
 from api.schema import (
     AskChatRequest,
     AskChatResponse,
@@ -25,7 +23,7 @@ from api.schema import (
 log = logging.getLogger("copilot.router")
 router = APIRouter()
 
-APP_NAME = "sre_copilot"
+APP_NAME = "incident_copilot"
 USER_ID = "user"
 
 session_service = InMemorySessionService()
@@ -78,20 +76,6 @@ def _insert_message(chat_id: int, role: str, message: str, llm_calls: int = 0) -
         conn.close()
 
 
-def _update_cache(chat_id: int, data: dict):
-    try:
-        redis_client.set(f"chat:{chat_id}", json.dumps(data), ex=3600)
-    except Exception:
-        pass
-
-
-def _delete_cache(chat_id: int):
-    try:
-        redis_client.delete(f"chat:{chat_id}")
-    except Exception:
-        pass
-
-
 # ─── Chat endpoints ──────────────────────────────────────────────────────────────
 
 @router.get("/chats", response_model=List[ChatInfoResponse])
@@ -111,16 +95,9 @@ def get_all_chats():
 
 @router.get("/chat/{id}", response_model=ChatResponse)
 def get_chat(id: int):
-    cached = redis_client.get(f"chat:{id}")
-    if cached:
-        try:
-            return json.loads(cached)
-        except Exception:
-            pass
     data = get_chat_from_db(id)
     if not data:
         raise HTTPException(status_code=404, detail="Chat not found")
-    _update_cache(id, data)
     return data
 
 
@@ -132,7 +109,6 @@ def new_chat():
         cursor.execute("INSERT INTO chats (title) VALUES (?)", ("New Chat",))
         conn.commit()
         new_id = cursor.lastrowid
-        _update_cache(new_id, {"id": new_id, "title": "New Chat", "messages": []})
         return {"id": new_id}
     finally:
         conn.close()
@@ -157,7 +133,6 @@ async def ask_chat(id: int, request: AskChatRequest):
             log.warning("Failed to auto-rename chat: %s", e)
         finally:
             conn.close()
-        _delete_cache(id)
 
     content = types.Content(
         role="user",
@@ -193,10 +168,6 @@ async def ask_chat(id: int, request: AskChatRequest):
 
     _insert_message(id, "agent", agent_reply, llm_calls)
 
-    updated = get_chat_from_db(id)
-    if updated:
-        _update_cache(id, updated)
-
     return {"response": agent_reply, "llm_calls": llm_calls}
 
 
@@ -212,10 +183,6 @@ def rename_chat(id: int, request: RenameChatRequest):
         conn.commit()
     finally:
         conn.close()
-    _delete_cache(id)
-    data = get_chat_from_db(id)
-    if data:
-        _update_cache(id, data)
     return {"success": True}
 
 
@@ -231,5 +198,4 @@ def delete_chat(id: int):
         conn.commit()
     finally:
         conn.close()
-    _delete_cache(id)
     return {"success": True}

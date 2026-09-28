@@ -1,54 +1,53 @@
 import logging
 import os
+from typing import Annotated
 
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Path, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-# OpenTelemetry imports
-from opentelemetry import trace, metrics
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.logging import LoggingInstrumentor
-
 from database import get_db
 from models import TodoDB, TodoCreate, TodoUpdate, TodoResponse
-from faults import RouteKey, FaultName, apply_faults, toggle_fault, get_faults
+from faults import RouteKey, FaultError, apply_faults, state as fault_state
+from telemetry import EventEmitter, install as install_telemetry
+from admin import router as admin_router
 
-# ─── OpenTelemetry Setup ────────────────────────────────────────────────────────
+# Ids beyond SQLite's integer range would otherwise surface as an unexpected 500.
+TodoId = Annotated[int, Path(ge=1, le=2**31 - 1)]
 
-OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
-resource = Resource.create({"service.name": "todo-app", "service.instance.id": "instance-1"})
+# ─── Logging and telemetry ──────────────────────────────────────────────────────
 
-# Tracing
-tracer_provider = TracerProvider(resource=resource)
-trace.set_tracer_provider(tracer_provider)
-span_exporter = OTLPSpanExporter(endpoint=OTEL_ENDPOINT, insecure=True)
-tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
-
-# Metrics
-metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=OTEL_ENDPOINT, insecure=True))
-meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
-metrics.set_meter_provider(meter_provider)
-meter = metrics.get_meter("todo.meter")
-faults_active = meter.create_up_down_counter("todo_faults_active", description="Number of active faults")
-
-# Logging
-LoggingInstrumentor().instrument(set_logging_format=True)
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("todo.app")
 
+SERVICE_NAME = os.getenv("SERVICE_NAME", "todo-app")
+emitter = EventEmitter(
+    url=os.getenv("COPILOT_INGEST_URL", ""),
+    api_key=os.getenv("INGEST_KEY", ""),
+    service=SERVICE_NAME,
+)
+
 # ─── FastAPI App ────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="SRE Copilot Todo App")
-FastAPIInstrumentor.instrument_app(app)
+app = FastAPI(title="Todo App", docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
+app.include_router(admin_router)
+install_telemetry(
+    app,
+    emitter,
+    context_fn=fault_state.context_text,
+    status_for_exc=lambda exc: exc.status_code if isinstance(exc, FaultError) else 500,
+)
+
+
+@app.on_event("startup")
+def _start_emitter() -> None:
+    emitter.start()
+
+
+@app.on_event("shutdown")
+def _stop_emitter() -> None:
+    emitter.stop()
 
 # Serve Frontend
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -60,7 +59,11 @@ def serve_index():
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     log.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    if isinstance(exc, FaultError):
+        # Injected incidents surface their message on purpose: it is the evidence the agent reads.
+        return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+    # Anything else is a real bug: never leak internals to the client.
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
 # ─── Todo CRUD Endpoints ────────────────────────────────────────────────────────
 
@@ -99,7 +102,7 @@ async def create_todo(todo: TodoCreate, db: Session = Depends(get_db)):
 
 
 @app.put("/todos/{todo_id}", response_model=TodoResponse)
-async def update_todo(todo_id: int, todo: TodoUpdate, db: Session = Depends(get_db)):
+async def update_todo(todo_id: TodoId, todo: TodoUpdate, db: Session = Depends(get_db)):
     """Update an existing todo by ID. All fields are optional.
 
     Example::
@@ -122,7 +125,7 @@ async def update_todo(todo_id: int, todo: TodoUpdate, db: Session = Depends(get_
 
 
 @app.delete("/todos/{todo_id}")
-async def delete_todo(todo_id: int, db: Session = Depends(get_db)):
+async def delete_todo(todo_id: TodoId, db: Session = Depends(get_db)):
     """Delete a todo by ID.
 
     Example::
@@ -137,47 +140,6 @@ async def delete_todo(todo_id: int, db: Session = Depends(get_db)):
     db.delete(db_todo)
     db.commit()
     return {"detail": "Todo deleted"}
-
-# ─── Fault Control Endpoints ────────────────────────────────────────────────────
-
-@app.get("/admin/faults")
-def list_faults():
-    """Return the current fault state for every route.
-
-    Example response::
-
-        {
-            "get_todos":   {"latency_spike": false, "random_500_storm": false, ...},
-            "post_todos":  {"latency_spike": true,  "random_500_storm": false, ...},
-            ...
-        }
-    """
-    return get_faults()
-
-
-@app.post("/admin/faults/{route_key}/{fault_name}")
-def set_fault(route_key: RouteKey, fault_name: FaultName, enabled: bool):
-    """Enable or disable a fault on a specific route.
-
-    Both ``route_key`` and ``fault_name`` are enums — use the Swagger dropdowns
-    to select valid values.
-
-    Example — inject latency on GET /todos::
-
-        POST /admin/faults/get_todos/latency_spike?enabled=true
-
-    Example — trigger random 500s on POST /todos::
-
-        POST /admin/faults/post_todos/random_500_storm?enabled=true
-
-    Example — simulate connection exhaustion on DELETE /todos/{todo_id}::
-
-        POST /admin/faults/delete_todo/db_connection_leak?enabled=true
-    """
-    toggle_fault(route_key, fault_name, enabled)
-    faults_active.add(1 if enabled else -1)
-    return {"route": route_key.value, "fault": fault_name.value, "enabled": enabled}
-
 
 @app.get("/health")
 def get_health():

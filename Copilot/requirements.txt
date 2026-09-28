@@ -2,9 +2,5 @@ google-adk>=2.6.1
 fastapi
 uvicorn[standard]
 httpx
-redis
 pydantic
-langchain-text-splitters
-langchain-chroma
-langchain-google-genai
 python-dotenv
