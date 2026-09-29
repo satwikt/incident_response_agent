@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Architecture Flow</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 32px;
+    background: #0B0E14;
+    color: #E7EAF0;
+    font-family: 'Segoe UI', Inter, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    justify-content: center;
+  }
+  h1 { font-size: 20px; margin: 0 0 18px; color: #F5A623; font-weight: 600; letter-spacing: 0.3px; }
+  .row { display: flex; align-items: center; flex-wrap: nowrap; }
+  .arrow { color: #5B6478; font-size: 22px; margin: 0 6px; flex-shrink: 0; }
+  .arrow-down { color: #5B6478; font-size: 22px; margin: 4px 0; }
+  .box {
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    line-height: 1.35;
+    text-align: center;
+    min-width: 108px;
+    max-width: 140px;
+    border-width: 1.5px;
+    border-style: solid;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .box b { display: block; font-size: 13px; margin-bottom: 2px; }
+  .app { background: #2a1f3d; border-color: #8a4fc9; color: #e6d4ff; }
+  .copilot { background: #12312e; border-color: #2a9d8f; color: #d4f7f0; }
+  .ext { background: #3d3212; border-color: #c9970a; color: #ffe9b3; }
+  .store { border-radius: 40px; }
+
+  .branches { display: flex; gap: 40px; margin-top: 6px; align-items: flex-start; }
+  .branch { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .branch-label { font-size: 11px; color: #8792A6; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .side { display: flex; align-items: center; gap: 4px; }
+  .hs-link { font-size: 16px; color: #c9970a; }
+
+  .legend { display: flex; gap: 18px; margin-top: 22px; font-size: 11px; color: #8792A6; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+</style>
+</head>
+<body>
+
+  <h1>Incident Response Agent — Architecture</h1>
+
+  <div class="row">
+    <div class="box app"><b>Todo API</b></div>
+    <div class="arrow">→</div>
+    <div class="box app">Event emitter<br><span style="opacity:.7">batched, never blocks a request</span></div>
+    <div class="arrow">→</div>
+    <div class="box copilot">POST /ingest/events<br><span style="opacity:.7">keyed, rate-limited, validated</span></div>
+    <div class="arrow">→</div>
+    <div class="box copilot store">SQLite<br><span style="opacity:.7">events, incidents, outbox</span></div>
+    <div class="arrow">→</div>
+    <div class="box copilot">Watcher<br><span style="opacity:.7">every WATCHER_INTERVAL_MINUTES</span></div>
+    <div class="arrow">→</div>
+    <div class="box copilot">Breach detector<br><span style="opacity:.7">error rate, p95, slow, keywords</span></div>
+    <div class="arrow">→</div>
+    <div class="box copilot"><b>Incident manager</b><br><span style="opacity:.7">fingerprint, dedupe, state machine</span></div>
+  </div>
+
+  <div class="arrow-down">↓</div>
+
+  <div class="branches">
+
+    <div class="branch">
+      <div class="branch-label">Diagnose</div>
+      <div class="box copilot">Memory: recall<br><span style="opacity:.7">by fingerprint + similarity</span></div>
+      <div class="side"><span class="hs-link">↔</span><div class="box ext" style="min-width:80px;">Hindsight</div></div>
+      <div class="arrow-down">↓</div>
+      <div class="box copilot">Diagnosis queue<br><span style="opacity:.7">full diagnosis, or memory-first verify</span></div>
+    </div>
+
+    <div class="branch">
+      <div class="branch-label">Notify → Remediate → Learn</div>
+      <div class="box copilot">Durable outbox<br><span style="opacity:.7">idempotent, ordered, dead-letters</span></div>
+      <div style="font-size:10px;color:#8792A6;margin:2px 0;">↑ diagnosis (2nd message)</div>
+      <div class="arrow-down">↓</div>
+      <div class="box ext">Discord webhook</div>
+      <div class="arrow-down">↓</div>
+      <div class="box app">On-call engineer<br><span style="opacity:.7">runs an allow-listed fix via POST /ops</span></div>
+      <div class="arrow-down">↓</div>
+      <div class="box app">Action journal<br><span style="opacity:.7">GET /ops/journal</span></div>
+      <div class="arrow-down">↓</div>
+      <div class="box copilot">Memory: retain<br><span style="opacity:.7">the outcome, on resolve</span></div>
+      <div class="side"><span class="hs-link">↔</span><div class="box ext" style="min-width:80px;">Hindsight</div></div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:#8a4fc9;"></span>Monitored app</span>
+    <span><span class="dot" style="background:#2a9d8f;"></span>Copilot (this project)</span>
+    <span><span class="dot" style="background:#c9970a;"></span>External (Hindsight / Discord)</span>
+  </div>
+
+</body>
+</html>

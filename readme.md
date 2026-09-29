@@ -170,6 +170,8 @@ Prerequisite: Docker Desktop, and an LLM key (any [LiteLLM](https://docs.litellm
 `openai/gpt-oss-120b` is what this was built and tested against; see `docs/DESIGN.md` §14–15 for free-tier limits).
 
 ```bash
+git clone https://github.com/satwikt/incident_response_agent.git
+cd incident_response_agent
 cp .env.example .env
 # fill in INGEST_KEY, CHAOS_KEY, OPS_KEY (each: openssl rand -hex 24), AGENT_MODEL + its API key,
 # and HINDSIGHT_LLM_API_KEY (Hindsight uses its own LLM call for memory extraction — a separate quota)
@@ -180,14 +182,27 @@ docker compose up -d --build
 - All ports are bound to localhost only. The Copilot chat endpoints have no auth yet (`docs/OPEN_DEFECTS.md`), so
   don't expose it beyond your machine.
 
-Break something and watch the whole loop, twice, to see memory in action:
+Break something and watch the whole loop, twice, to see memory in action (first, make the keys
+you just filled into `.env` available as shell variables: `export $(grep -E '^(CHAOS_KEY|OPS_KEY)=' .env)`).
+Traffic must be
+**continuous**, not a single burst — a route with too few requests in a window is judged
+"not enough data" rather than healthy, so the incident's healthy-window count never advances and
+it looks stuck OPEN. Run the loop below in a second terminal and leave it running through every
+step:
 
 ```bash
+# terminal 2: keep this running throughout
+while true; do curl -s -o /dev/null -X POST http://127.0.0.1:8000/todos \
+  -H "Content-Type: application/json" -d '{"title":"x"}'; sleep 0.4; done
+```
+
+```bash
+# terminal 1
 # 1st time: full diagnosis
 curl -X POST "http://127.0.0.1:8000/chaos/bad_deploy/post_todos?enabled=true" -H "X-Api-Key: $CHAOS_KEY"
-#   generate traffic, watch: docker compose logs -f copilot   ("Incident INC-... opened ...")
+#   watch: docker compose logs -f copilot   ("Incident INC-... opened ...")
 curl -X POST http://127.0.0.1:8000/ops/rollback_release -H "X-Api-Key: $OPS_KEY"   # the right fix
-#   wait for it to auto-resolve (RECOVERY_WINDOWS healthy windows), then:
+#   wait for it to auto-resolve (RECOVERY_WINDOWS healthy windows, needs terminal 2's traffic), then:
 curl -X POST http://127.0.0.1:8000/chaos/reset -H "X-Api-Key: $CHAOS_KEY"
 
 # 2nd time: same fault -> memory-first verify, far fewer tokens, the confirmed fix proposed

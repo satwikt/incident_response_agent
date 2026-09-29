@@ -10,6 +10,86 @@ continuous traffic loop (see Gotcha #1) muted/cropped out of the recording frame
 
 ---
 
+## Exact narration script
+
+Word-for-word, ~470 words / about 3 minutes at a natural pace. This is a scaffold, not a
+teleprompter -- read it once or twice, then say it in your own words on the actual take (the
+video checklist itself says not to read a script verbatim, and it sounds better that way).
+Bracketed lines are actions to perform on screen, not to say out loud.
+
+> **[0:00 -- 0:30] Intro**
+> "Hey, I'm Satwik. This is an incident-response agent I built with a memory layer on Hindsight.
+> Here's the problem it's solving: when a service breaks at 3 a.m., the first twenty minutes
+> usually don't go to fixing anything -- they go to figuring out where to even look. Half the
+> time, someone already knows the answer, from an almost identical incident weeks ago that's
+> sitting in nobody's searchable memory. This agent remembers those outages, so it doesn't start
+> from zero every time."
+>
+> *[Show: README, architecture diagram]*
+
+> **[0:30 -- 1:00] The problem**
+> "Let me show you the problem first, with memory turned off. I'll inject a fault -- a bad
+> deploy that raises a database error on this route.
+>
+> *[inject bad_deploy]*
+>
+> Here's the alert and the diagnosis: four tool calls, about eleven thousand tokens, and it
+> correctly finds the bad release. Now watch what happens when the exact same fault comes back.
+>
+> *[approve fix, resolve, re-inject bad_deploy]*
+>
+> Same diagnosis, same four calls, roughly the same cost again. It has no idea it's seen this
+> before."
+
+> **[1:00 -- 1:45] Incident 1, with memory on**
+> "Now with memory switched on. Same kind of fault, a fresh incident.
+>
+> *[inject bad_deploy]*
+>
+> The opening alert fires immediately -- it never waits on the model. The diagnosis follows a
+> few seconds later: two tool calls, about six and a half thousand tokens, correctly pointing at
+> the bad release.
+>
+> *[approve fix via ops endpoint]*
+>
+> I approve the fix here, and once traffic looks healthy again, the incident resolves on its own
+> and the record gets retained.
+>
+> *[show Hindsight UI, port 9999]*
+>
+> That's the new memory -- symptoms, root cause, the fix that worked, tagged to this incident's
+> fingerprint. This is exactly what a runbook should be, except nobody had to write it down."
+
+> **[1:45 -- 2:30] Incident 2: the before/after moment, then the decoy**
+> "Here's where it gets interesting. Same fault, one more time.
+>
+> *[re-inject bad_deploy]*
+>
+> This time the agent recognizes it immediately: known issue, this fix worked before -- one
+> model call, about five hundred and sixty tokens. Roughly twelve times cheaper than the first
+> time, because it isn't re-diagnosing from scratch, it's verifying a hypothesis against live
+> evidence.
+>
+> But memory isn't blind trust. Watch this: I inject a completely different fault -- a bad
+> config change -- that happens to produce the exact same error text.
+>
+> *[approve fix, resolve, inject bad_config]*
+>
+> The agent pulls up the old memory, checks it against what's actually happening right now,
+> notices the config revision doesn't match, and says so: verdict, mismatch. It refuses to reuse
+> a fix that wouldn't have worked."
+
+> **[2:30 -- 3:00] Wrap-up**
+> "Two things surprised us building this. One: memory only helps if incidents actually have an
+> identity -- without fingerprinting, the same problem looks like five different alerts. Two:
+> free-tier token limits shaped more of this design than the model itself did. The code, the
+> design doc, and the full write-up are linked below, along with how Hindsight's retain and
+> recall actually work under the hood."
+>
+> *[Show: learning-curve / cost comparison chart]*
+
+---
+
 ## 0. Pre-flight (run before every recording session, not on camera)
 
 ```bash

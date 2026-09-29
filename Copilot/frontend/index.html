@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SRE Copilot (Google ADK)</title>
+    <title>Incident Response Agent</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -148,9 +148,9 @@
             <div class="px-4 pt-5 pb-4 border-b border-line">
                 <div class="flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-accent text-accent pulse-dot"></span>
-                    <h1 class="font-display font-semibold text-[15px] tracking-wide">SRE Copilot</h1>
+                    <h1 class="font-display font-semibold text-[15px] tracking-wide">Incident Response Agent</h1>
                 </div>
-                <p class="text-xs text-dim font-mono mt-1 pl-4.5">Google ADK agent<span class="blink-cursor"></span></p>
+                <p class="text-xs text-dim font-mono mt-1 pl-4.5">Memory-backed agent<span class="blink-cursor"></span></p>
             </div>
 
             <div class="p-3">
@@ -205,14 +205,14 @@
             <!-- Empty State -->
             <div id="empty-state" class="flex-1 flex items-center justify-center px-6">
                 <div class="max-w-lg w-full text-center">
-                    <h2 class="font-display text-2xl font-semibold mb-2">Google ADK SRE Copilot</h2>
-                    <p class="text-muted text-sm mb-4">Ask any question about errors, latency, logs, traces, or health. Gemini will execute tools autonomously.</p>
+                    <h2 class="font-display text-2xl font-semibold mb-2">Incident Response Agent</h2>
+                    <p class="text-muted text-sm mb-4">Ask any question about errors, latency, logs, or health. The agent will execute tools autonomously.</p>
                     <div class="grid grid-cols-2 gap-2 text-xs text-left font-mono">
                         <button onclick="sendQuickPrompt('What is the current error rate across all routes?')" class="p-3 bg-surface border border-line rounded-lg hover:border-accent/40 transition-colors">
                             ⚡ "What is the current error rate?"
                         </button>
-                        <button onclick="sendQuickPrompt('Check p95 latency and show slow traces')" class="p-3 bg-surface border border-line rounded-lg hover:border-accent/40 transition-colors">
-                            🐢 "Check latency & slow traces"
+                        <button onclick="sendQuickPrompt('Check p95 latency and show slow requests')" class="p-3 bg-surface border border-line rounded-lg hover:border-accent/40 transition-colors">
+                            🐢 "Check latency & slow requests"
                         </button>
                         <button onclick="sendQuickPrompt('Fetch recent error logs and identify root cause')" class="p-3 bg-surface border border-line rounded-lg hover:border-accent/40 transition-colors">
                             📜 "Fetch error logs & root cause"
@@ -405,7 +405,7 @@
                     if (llmCalls !== undefined && llmCalls !== null) {
                         callsHtml = `<span class="text-[10px] text-dim font-mono ml-2 border border-line px-1.5 py-0.5 rounded-full">${llmCalls} LLM calls</span>`;
                     }
-                    wrap.innerHTML = `<div class="flex items-center mb-1"><span class="text-[11px] font-mono text-accent">GOOGLE ADK AGENT</span>${callsHtml}</div><div class="text-sm leading-relaxed text-text msg-prose">${renderMarkdownLite(content)}</div>`;
+                    wrap.innerHTML = `<div class="flex items-center mb-1"><span class="text-[11px] font-mono text-accent">INCIDENT RESPONSE AGENT</span>${callsHtml}</div><div class="text-sm leading-relaxed text-text msg-prose">${renderMarkdownLite(content)}</div>`;
                 }
                 el.messagesInner.appendChild(wrap);
                 return wrap;
@@ -415,7 +415,7 @@
                 const wrap = document.createElement('div');
                 wrap.id = 'typing-indicator';
                 wrap.className = 'flex flex-col items-start';
-                wrap.innerHTML = `<span class="text-[11px] font-mono text-accent mb-1.5">GOOGLE ADK AGENT</span><div class="flex items-center gap-1.5 py-1"><span class="typing-dot w-1.5 h-1.5 rounded-full bg-dim"></span><span class="typing-dot w-1.5 h-1.5 rounded-full bg-dim"></span><span class="typing-dot w-1.5 h-1.5 rounded-full bg-dim"></span></div>`;
+                wrap.innerHTML = `<span class="text-[11px] font-mono text-accent mb-1.5">INCIDENT RESPONSE AGENT</span><div class="flex items-center gap-1.5 py-1"><span class="typing-dot w-1.5 h-1.5 rounded-full bg-dim"></span><span class="typing-dot w-1.5 h-1.5 rounded-full bg-dim"></span><span class="typing-dot w-1.5 h-1.5 rounded-full bg-dim"></span></div>`;
                 el.messagesInner.appendChild(wrap);
                 scrollToBottom();
             }
