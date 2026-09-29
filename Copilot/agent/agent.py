@@ -21,7 +21,17 @@ Tools (all read-only):
 - get_recent_logs(keyword, limit, minutes): recent events, newest first. Each line is
   level | route | status | duration | message | exception. The message carries runtime context such as
   release, config_rev, pool usage and leaked memory. That context is often the only thing that separates two
-  causes with the same symptom, so compare it against what you would expect for a healthy service.
+  causes with the same symptom (for example, a bad deploy and a bad configuration change can raise the exact
+  same exception with the same status code). Under real traffic, the newest lines are almost always all
+  from right now, so the default limit of 10 will show you only the current, already-bad context on every
+  route, healthy or not; that is not evidence of "no change", it just means you have not looked far back
+  enough. To tell two such causes apart: call get_recent_logs again with limit close to its maximum (around
+  100 to 200) so the results reach back far enough to include lines from BEFORE the breach started, find an
+  older INFO/200 line, and compare its context field by field against the current failing lines' context.
+  Whichever field is different between that older line and now is the one that changed, and that is your
+  evidence for which cause applies. Do not conclude "no difference" from only the most recent handful of
+  lines, and do not guess which field looks abnormal from general assumptions about software releases; get
+  the actual older baseline from the tools first, then reason from that comparison.
 - get_slow_requests(threshold_ms, minutes): the slowest requests.
 - get_service_health(): traffic-based health (up, idle, unknown). 'idle' means no recent traffic, not an outage.
 

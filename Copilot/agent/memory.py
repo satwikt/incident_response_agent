@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
 
@@ -154,26 +155,42 @@ def _tag_value(tags: List[str], prefix: str) -> Optional[str]:
 
 
 class HindsightMemory:
-    """Hindsight-backed memory. ``client`` is a hindsight_client.Hindsight (or anything with the same methods)."""
+    """Hindsight-backed memory. ``client`` is a hindsight_client.Hindsight (or anything with the same methods).
+
+    The client's sync methods each spin up an asyncio event loop internally and lazily create an aiohttp session
+    bound to whichever event loop was current on first use. Callers here span the watcher's default thread-pool
+    executor and the diagnosis queue's worker, which are DIFFERENT OS threads across ticks; calling the client from
+    a second thread/loop after its session bound to the first raises "Timeout context manager should be used
+    inside a task" (aiohttp session pinned to a dead loop). Routing every client call through one dedicated,
+    single-worker executor keeps the client on one thread (and therefore one event loop) for the app's lifetime,
+    regardless of which thread calls in.
+    """
 
     enabled = True
 
     def __init__(self, client: Any, bank_id: str, min_score: float = 0.05, max_results: int = 3,
-                 status_fn: Optional[Any] = None) -> None:
+                 status_fn: Optional[Any] = None, executor: Optional[ThreadPoolExecutor] = None) -> None:
         self._c = client
         self.bank_id = bank_id
         self.min_score = min_score
         self.max_results = max_results
         self._status_fn = status_fn          # (operation_id) -> str; injected so tests need no async client
         self._ready = False
+        self._executor = executor            # None in tests (fake client, no real event loop involved)
+
+    def _call(self, fn, *args, **kwargs):
+        """Run a client call on the dedicated memory thread when one is configured; inline otherwise (tests)."""
+        if self._executor is None:
+            return fn(*args, **kwargs)
+        return self._executor.submit(fn, *args, **kwargs).result()
 
     def ensure_bank(self) -> None:
         """Create the bank if needed. Retried on every call until it succeeds (Hindsight may still be starting)."""
         if self._ready:
             return
         try:
-            self._c.create_bank(bank_id=self.bank_id, reflect_mission="Incident response memory for an on-call engineer.",
-                                enable_observations=False)
+            self._call(self._c.create_bank, bank_id=self.bank_id,
+                       reflect_mission="Incident response memory for an on-call engineer.", enable_observations=False)
             self._ready = True
         except Exception as exc:  # noqa: BLE001 - recall/retain surface real problems; we try again next time
             log.info("ensure_bank: %s", type(exc).__name__)
@@ -186,10 +203,11 @@ class HindsightMemory:
         self.ensure_bank()
         try:
             if fp_tags:
-                resp = self._c.recall(bank_id=self.bank_id, query=query, tags=fp_tags, tags_match="any_strict", max_tokens=2000)
+                resp = self._call(self._c.recall, bank_id=self.bank_id, query=query, tags=fp_tags,
+                                  tags_match="any_strict", max_tokens=2000)
                 self._collect(resp, found, exact=True, exclude_id=exclude_id)
-            resp = self._c.recall(bank_id=self.bank_id, query=query, tags=["kind:incident"], tags_match="all_strict",
-                                  max_tokens=2000)
+            resp = self._call(self._c.recall, bank_id=self.bank_id, query=query, tags=["kind:incident"],
+                              tags_match="all_strict", max_tokens=2000)
             self._collect(resp, found, exact=False, exclude_id=exclude_id)
         except Exception as exc:  # noqa: BLE001 - fail open
             log.warning("memory recall failed (%s); continuing without memory", type(exc).__name__)
@@ -225,10 +243,10 @@ class HindsightMemory:
             tags.append(_FIX_TAG + fix)
         tags += [_FAILED_TAG + f for f in failed]
         try:
-            resp = self._c.retain(
-                bank_id=self.bank_id, content=narrative, document_id=incident["id"], update_mode="replace", tags=tags,
-                metadata={"incident_id": incident["id"], "source": source}, retain_async=True,
-                operation_id=str(uuid.uuid4()))
+            resp = self._call(
+                self._c.retain, bank_id=self.bank_id, content=narrative, document_id=incident["id"],
+                update_mode="replace", tags=tags, metadata={"incident_id": incident["id"], "source": source},
+                retain_async=True, operation_id=str(uuid.uuid4()))
         except Exception as exc:  # noqa: BLE001
             return RetainOutcome("failed", detail=type(exc).__name__)
         op = getattr(resp, "operation_id", None)
@@ -238,7 +256,7 @@ class HindsightMemory:
         if not operation_id or self._status_fn is None:
             return "unknown"
         try:
-            return str(self._status_fn(operation_id))
+            return str(self._call(self._status_fn, operation_id))
         except Exception:  # noqa: BLE001
             return "unknown"
 
@@ -251,9 +269,13 @@ def make_memory(url: str, bank_id: str, mode: str, min_score: float = 0.05) -> A
     from hindsight_client.hindsight_client import _run_async
 
     client = Hindsight(base_url=url)
+    # One dedicated worker thread for every call this client ever makes (see HindsightMemory's docstring): its sync
+    # methods lazily bind an aiohttp session to whichever event loop is current on first use, and callers here span
+    # several different threads (the watcher's default executor, the diagnosis queue) across ticks.
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hindsight-client")
 
     def status(op_id: str) -> str:
         res = _run_async(client.operations.get_operation_status(bank_id=bank_id, operation_id=op_id))
         return str(getattr(res, "status", "unknown"))
 
-    return HindsightMemory(client, bank_id, min_score=min_score, status_fn=status)
+    return HindsightMemory(client, bank_id, min_score=min_score, status_fn=status, executor=executor)
