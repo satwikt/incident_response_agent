@@ -124,38 +124,116 @@ The system includes a dedicated runtime fault injection interface at **`http://l
 
 ---
 
-## 5. Quickstart
+## 5. Setup & Getting Started
 
-### Prerequisites
-* Docker Desktop & Docker Compose
-* NVIDIA NIM API key (`NVIDIA_API_KEY`) from [build.nvidia.com](https://build.nvidia.com)
-* Groq API key for Hindsight memory extraction (`HINDSIGHT_LLM_API_KEY`)
+### 5.1 Prerequisites
+* **Docker Engine** & **Docker Compose v2+**
+* **Python 3.10+** (if running the indexing script or test suite locally)
+* **NVIDIA NIM API Key** (`NVIDIA_API_KEY`) from [build.nvidia.com](https://build.nvidia.com) (used for Nemotron Nano, Super, and Ultra model tiers)
+* **Groq API Key** (`HINDSIGHT_LLM_API_KEY`) for Hindsight episodic memory extraction and fallback reasoning
 
-### Setup & Startup
+---
 
-1. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Add your NVIDIA_API_KEY and HINDSIGHT_LLM_API_KEY to .env
-   ```
+### 5.2 Setup Steps
 
-2. **Launch the entire stack**:
-   ```bash
-   docker compose up -d --build
-   ```
+#### 1. Configure Environment Variables
+Copy the template and supply your API credentials:
+```bash
+cp .env.example .env
+```
+Open `.env` and fill in your keys:
+```dotenv
+NVIDIA_API_KEY=nvapi-your-key-here
+HINDSIGHT_LLM_API_KEY=gsk_your-groq-key-here
+# Optional: Discord notification channel
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
 
-3. **Access Services**:
-   * **Astronomy Shop Store**: [http://localhost:8080](http://localhost:8080)
-   * **Faults Control Deck**: [http://localhost:8080/faults](http://localhost:8080/faults)
-   * **Incident Copilot Dashboard**: [http://localhost:8001/dashboard](http://localhost:8001/dashboard)
-   * **Grafana**: [http://localhost:3001](http://localhost:3001) (admin / admin)
-   * **Prometheus**: [http://localhost:9090](http://localhost:9090)
-   * **Tempo Traces**: [http://localhost:3200](http://localhost:3200)
-   * **Hindsight Console**: [http://localhost:9999](http://localhost:9999)
+#### 2. Run the Documentation RAG Indexing Script
+Before launching the copilot, vectorize the architecture and runbook documentation into ChromaDB and generate the BM25 fallback index. This enables the Reactive Query Agent and RCA Agent to perform sub-second semantic retrieval on operational runbooks:
 
-### Running Tests
+```bash
+chmod +x scripts/index_docs.sh
+./scripts/index_docs.sh
+```
 
+*Alternatively, execute the Python indexer directly:*
+```bash
+python3 Copilot/scripts/index_docs.py \
+  --docs-path otel_demo/docs \
+  --chroma-path Copilot/data/chroma_db \
+  --collection astronomy_shop_docs \
+  --index-path Copilot/data/docs_index.json
+```
+This populates:
+* `Copilot/data/chroma_db/`: Persistent ChromaDB vector database with cosine embeddings.
+* `Copilot/data/docs_index.json`: Pre-computed BM25 inverted index for instant lexical fallback.
+
+#### 3. Build Docker Images
+Build the application microservices (`frontend`, `catalog`, `checkout`), the AI SRE Copilot, and the telemetry adapter:
+```bash
+docker compose build
+```
+*(Optionally build in parallel with `docker compose build --parallel`)*.
+
+---
+
+### 5.3 Starting the Stack
+
+#### 1. Launch All Services in Detached Mode
+```bash
+docker compose up -d
+```
+
+#### 2. Verify Container Health
+```bash
+docker compose ps
+```
+All 10 services should report `running` (or `healthy`). To follow Copilot startup and detection logs:
+```bash
+docker compose logs -f copilot
+```
+
+---
+
+### 5.4 Service Ports & Web Interfaces
+
+Once started, the following services and user interfaces are immediately accessible on `localhost`:
+
+| Service | Container | Host URL / Port | Internal Port | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Astronomy Shop Storefront** | `astronomy-frontend` | [http://localhost:8080](http://localhost:8080) | `8080` | Web store UI and gateway with automated synthetic traffic. |
+| **Runtime Faults Control Deck** | `astronomy-frontend` | [http://localhost:8080/faults](http://localhost:8080/faults) | `8080` | Interactive chaos console to inject runtime anomalies. |
+| **Copilot Incident Dashboard** | `incident-copilot` | [http://localhost:8001/dashboard](http://localhost:8001/dashboard) | `8001` | Live incident queue, timeline, memory recall, and fix verification. |
+| **Copilot Chat Assistant** | `incident-copilot` | [http://localhost:8001](http://localhost:8001) | `8001` | Multi-turn conversational SRE operator assistant. |
+| **Grafana Dashboards** | `grafana` | [http://localhost:3001](http://localhost:3001) | `3000` | LGTM dashboards and telemetry correlation (Credentials: `admin` / `admin`). |
+| **Prometheus Metrics** | `prometheus` | [http://localhost:9090](http://localhost:9090) | `9090` | Metrics scraper and raw PromQL evaluation UI. |
+| **Tempo Distributed Tracing** | `astronomy-tempo` | [http://localhost:3200](http://localhost:3200) | `3200` | Trace search UI and OTLP HTTP receiver (`:4318`). |
+| **Loki Log Aggregator** | `astronomy-loki` | [http://localhost:3100](http://localhost:3100) | `3100` | Structured JSON log query endpoint. |
+| **Hindsight Memory Engine** | `incident-hindsight` | [http://localhost:9999](http://localhost:9999) | `9999` (UI) / `8888` (API) | Episodic and procedural memory store. |
+| **Catalog Microservice** | `astronomy-catalog` | [http://localhost:5001](http://localhost:5001) | `5001` | Product catalog and cart REST API. |
+| **Checkout Microservice** | `astronomy-checkout` | [http://localhost:5002](http://localhost:5002) | `5002` | Order processing and fault injection engine. |
+| **PostgreSQL Database** | `astronomy-db` | `localhost:5433` | `5432` | Postgres 16 database storing products, carts, and orders. |
+
+---
+
+### 5.5 Running Verification Tests
+
+Execute the automated test suite locally:
 ```bash
 pytest -q
 ```
-All 325 unit and integration tests execute and pass in under 2 seconds.
+All unit, integration, and security tests execute against pre-computed mocks and indices with zero external API dependencies.
+
+---
+
+### 5.6 Teardown
+
+To stop all containers and tear down the network:
+```bash
+docker compose down
+```
+To also purge persisted database volumes and copilot stores:
+```bash
+docker compose down -v
+```

@@ -1,42 +1,70 @@
 # Operations Runbook
 
-## 1. Quick Start (Single Docker Compose)
+## 1. Setup & Startup Workflow
 
-The entire Astronomy Shop Lite mesh and observability stack starts with a single command from the root of the repository:
+### Step 1: Environment Configuration
+Copy the template environment file and set your API keys:
+```bash
+cp .env.example .env
+```
+Ensure `NVIDIA_API_KEY` and `HINDSIGHT_LLM_API_KEY` are populated in `.env`.
 
+### Step 2: Vectorize Documentation for RAG
+Index the Markdown runbooks and architecture docs into ChromaDB and build the BM25 fallback index:
+```bash
+chmod +x scripts/index_docs.sh
+./scripts/index_docs.sh
+```
+*Or run via Python:*
+```bash
+python3 Copilot/scripts/index_docs.py --docs-path otel_demo/docs --chroma-path Copilot/data/chroma_db
+```
+
+### Step 3: Build Container Images
+Build the microservices and copilot containers locally:
+```bash
+docker compose build
+```
+
+### Step 4: Start the Stack
+Bring up all services, observability agents, and databases in detached mode:
 ```bash
 docker compose up -d
 ```
 
 This brings up:
 1. **Astronomy Shop Microservices:**
-   - `frontend` (`:8080`): Storefront UI and API Gateway
+   - `frontend` (`:8080`): Storefront UI, Faults console, and API Gateway
    - `catalog` (`:5001`): Product catalog and cart service
    - `checkout` (`:5002`): Checkout orchestration and runtime fault engine
    - `astronomy-db` (`:5433` on host, `:5432` internal): PostgreSQL database
 2. **Observability Stack:**
    - Prometheus (`:9090`): Metrics scraper & PromQL engine
    - Loki (`:3100`): Structured JSON logs
-   - Tempo (`:3200` & `:4318`): Distributed OTLP tracing
-   - Grafana (`:3001`): Dashboards & LGTM datasources
+   - Tempo (`:3200` HTTP, `:4318` OTLP traces): Distributed tracing
+   - Grafana (`:3001`): Dashboards & LGTM datasources (`admin` / `admin`)
 3. **Telemetry Adapter:** Continuously polling metrics, logs, and traces and forwarding events to Copilot
 4. **Hindsight Memory Store:** Port `9999` (UI) / `8888` (API)
-5. **AI SRE Incident Copilot:** Port `8001` (Chat UI & Incident Operations Dashboard)
+5. **AI SRE Incident Copilot:** Port `8001` (Chat UI at `/` & Incident Operations Dashboard at `/dashboard`)
 
 ---
 
 ## 2. Ports and UI URLs
 
-| Service | Host URL | Description |
-| :--- | :--- | :--- |
-| **Astronomy Shop Store** | `http://localhost:8080/` | Live e-commerce shopping web application. |
-| **Runtime Faults Control Deck** | `http://localhost:8080/faults` | Interactive fault injection console to trigger real-time anomalies. |
-| **Copilot Incident Dashboard** | `http://localhost:8001/dashboard` | Live incident queue, timeline, memory recall, and fix verification. |
-| **Copilot Chat Assistant** | `http://localhost:8001/` | Multi-turn conversational SRE copilot. |
-| **Grafana** | `http://localhost:3001/` | Telemetry dashboards and correlation views (admin / admin). |
-| **Prometheus** | `http://localhost:9090/` | Raw metrics PromQL evaluation console. |
-| **Tempo** | `http://localhost:3200/` | Distributed tracing search and waterfall spans. |
-| **Hindsight Memory UI** | `http://localhost:9999/` | Episodic memory bank and recall inspector. |
+| Service | Container | Host URL | Description |
+| :--- | :--- | :--- | :--- |
+| **Astronomy Shop Store** | `astronomy-frontend` | `http://localhost:8080/` | Live e-commerce shopping web application. |
+| **Runtime Faults Control Deck** | `astronomy-frontend` | `http://localhost:8080/faults` | Interactive fault injection console to trigger real-time anomalies. |
+| **Copilot Incident Dashboard** | `incident-copilot` | `http://localhost:8001/dashboard` | Live incident queue, timeline, memory recall, and fix verification. |
+| **Copilot Chat Assistant** | `incident-copilot` | `http://localhost:8001/` | Multi-turn conversational SRE copilot. |
+| **Grafana** | `grafana` | `http://localhost:3001/` | Telemetry dashboards and correlation views (`admin` / `admin`). |
+| **Prometheus** | `prometheus` | `http://localhost:9090/` | Raw metrics PromQL evaluation console. |
+| **Tempo** | `astronomy-tempo` | `http://localhost:3200/` | Distributed tracing search and waterfall spans. |
+| **Loki** | `astronomy-loki` | `http://localhost:3100/` | Structured JSON log query endpoint. |
+| **Hindsight Memory UI** | `incident-hindsight` | `http://localhost:9999/` | Episodic memory bank and recall inspector. |
+| **Catalog API** | `astronomy-catalog` | `http://localhost:5001/` | Product catalog and cart service endpoint. |
+| **Checkout API** | `astronomy-checkout` | `http://localhost:5002/` | Order processing and fault injection API. |
+| **PostgreSQL Database** | `astronomy-db` | `localhost:5433` | PostgreSQL 16 database (internal container port `5432`). |
 
 ---
 
