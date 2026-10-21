@@ -441,7 +441,6 @@ ALL_TOOLS = [
     query_service_logs,
     query_service_traces,
     get_trace_by_id,
-    get_feature_flags,
     # Documentation RAG
     search_docs,
     # Temporal Memory & Hindsight

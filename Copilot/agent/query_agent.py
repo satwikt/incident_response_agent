@@ -33,7 +33,6 @@ Tools (all read-only and injection-proof):
 - query_service_logs(service_name, level, minutes, limit): Loki logs by service and level
 - query_service_traces(service_name, minutes, limit): Tempo/Jaeger traces
 - get_trace_by_id(trace_id): detailed span tree for a specific trace
-- get_feature_flags(): active feature flags and fault injections from flagd
 - search_docs(query, limit, service): search runbooks, architecture, and guides
 
 CRITICAL ANTI-LEAK RULE:
