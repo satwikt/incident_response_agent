@@ -88,9 +88,9 @@ class NullMemory:
 
 def context_of(message: Optional[str]) -> str:
     """The runtime-context suffix of an event message, unpacked to clean text if formatted as JSON."""
-    if not message:
+    if not message or " | " not in message:
         return ""
-    raw = message.rsplit(" | ", 1)[1].strip() if " | " in message else message.strip()
+    raw = message.rsplit(" | ", 1)[1].strip()
     if "{" in raw:
         try:
             start_idx = raw.index("{")
@@ -161,14 +161,15 @@ _PROPOSED = re.compile(r"proposed\s+action\s*:\s*`?([a-z0-9_-]+)`?", re.IGNORECA
 
 
 def parse_proposed_action(text: str, allowed: Optional[set] = None) -> Optional[str]:
-    """The proposed action named on a 'Proposed action: X' line. Accepts dynamic snake_case actions or allow-listed actions."""
+    """The proposed action named on a 'Proposed action: X' line, or None if none/unrecognized/not allowed."""
     for m in _PROPOSED.finditer(text or ""):
         name = m.group(1).lower().strip()
         if name in ("none", "noop", "null", "undefined"):
             return None
-        if not allowed or name in allowed:
-            return name
-        # Also accept any valid snake_case action name
+        if allowed is not None:
+            if name in allowed:
+                return name
+            continue
         if re.match(r"^[a-z0-9_-]+$", name):
             return name
     return None

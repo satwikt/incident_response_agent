@@ -212,6 +212,12 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
     if not action_name or not re.match(r"^[a-zA-Z0-9_\-\.]+$", action_name):
         raise HTTPException(status_code=400, detail=f"Invalid action '{action_name}'. Must be a valid action identifier.")
 
+    if action_name not in config.ALLOWED_ACTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid action '{action_name}'. Must be one of: {list(config.ALLOWED_ACTIONS)}"
+        )
+
     now_ms = int(time.time() * 1000)
     current_actions = inc.get("actions") or []
     action_record = {
