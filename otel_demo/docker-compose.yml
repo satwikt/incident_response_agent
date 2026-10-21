@@ -1,0 +1,23 @@
+include:
+  - path: vendor/opentelemetry-demo/compose.yaml
+  - path: vendor/opentelemetry-demo/compose.observability.yaml
+  - path: vendor/opentelemetry-demo/compose.extras.yaml
+  - path: integration/astronomy-shop/compose.overlay.yaml
+
+services:
+  otel-collector:
+    command:
+      - "--config=/etc/otelcol-config.yml"
+      - "--config=/etc/otelcol-config-full.yml"
+      - "--config=/etc/otelcol-config-observability.yml"
+      - "--config=/etc/otelcol-config-extras.yml"
+      - "--feature-gates=service.profilesSupport"
+    volumes:
+      - ./integration/astronomy-shop/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml:ro
+
+  grafana:
+    volumes:
+      - ./integration/astronomy-shop/grafana/provisioning/datasources/lgtm.yaml:/etc/grafana/provisioning/datasources/lgtm.yaml:ro
+      - ./integration/astronomy-shop/grafana/provisioning/alerting/astronomy-shop-alerts.yaml:/etc/grafana/provisioning/alerting/astronomy-shop-alerts.yaml:ro
+      - ./integration/astronomy-shop/grafana/dashboards/astronomy-shop-investigation.json:/etc/grafana/provisioning/dashboards/demo/astronomy-shop-investigation.json:ro
+

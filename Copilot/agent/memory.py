@@ -87,10 +87,32 @@ class NullMemory:
 # ── pure helpers ──────────────────────────────────────────────────────────────────────────────
 
 def context_of(message: Optional[str]) -> str:
-    """The runtime-context suffix of an event message ('... | release=v2.4.0 config_rev=cfg-r41 ...'), or ''."""
-    if not message or " | " not in message:
+    """The runtime-context suffix of an event message, unpacked to clean text if formatted as JSON."""
+    if not message:
         return ""
-    return message.rsplit(" | ", 1)[1].strip()[:200]
+    raw = message.rsplit(" | ", 1)[1].strip() if " | " in message else message.strip()
+    if "{" in raw:
+        try:
+            start_idx = raw.index("{")
+            end_idx = raw.rindex("}") + 1 if "}" in raw else len(raw)
+            json_str = raw[start_idx:end_idx]
+            import json
+            pj = json.loads(json_str) if json_str.endswith("}") else {}
+            if not pj:
+                m_msg = re.search(r'"(?:message|msg)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)', raw)
+                m_exc = re.search(r'"exception"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)', raw)
+                msg = m_msg.group(1).replace('\\"', '"') if m_msg else ""
+                exc = f" ({m_exc.group(1).replace('\\\"', '\"')})" if m_exc else ""
+                if msg:
+                    return f"{msg}{exc}"[:200]
+            else:
+                msg = pj.get("message") or pj.get("msg") or ""
+                exc = f" ({pj.get('exception')})" if pj.get("exception") else ""
+                if msg:
+                    return f"{msg}{exc}"[:200]
+        except Exception:
+            pass
+    return raw[:200]
 
 
 def build_narrative(incident: dict, actions: List[dict], fix: Optional[str], failed: List[str], context: str,
@@ -135,14 +157,19 @@ def split_actions(actions: List[dict], allowed: Optional[set] = None) -> tuple[O
     return fix, failed
 
 
-_PROPOSED = re.compile(r"proposed\s+action\s*:\s*`?([a-z_]+)`?", re.IGNORECASE)
+_PROPOSED = re.compile(r"proposed\s+action\s*:\s*`?([a-z0-9_-]+)`?", re.IGNORECASE)
 
 
-def parse_proposed_action(text: str, allowed: set) -> Optional[str]:
-    """The allow-listed action named on a 'Proposed action: X' line, else None. Anything not on the list is ignored."""
+def parse_proposed_action(text: str, allowed: Optional[set] = None) -> Optional[str]:
+    """The proposed action named on a 'Proposed action: X' line. Accepts dynamic snake_case actions or allow-listed actions."""
     for m in _PROPOSED.finditer(text or ""):
-        name = m.group(1).lower()
-        if name in allowed:
+        name = m.group(1).lower().strip()
+        if name in ("none", "noop", "null", "undefined"):
+            return None
+        if not allowed or name in allowed:
+            return name
+        # Also accept any valid snake_case action name
+        if re.match(r"^[a-z0-9_-]+$", name):
             return name
     return None
 

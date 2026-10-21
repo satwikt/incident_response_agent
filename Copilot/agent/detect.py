@@ -87,7 +87,8 @@ def healthy_routes(error_data: dict, latency_data: dict, slow_data: dict, t, clo
     return ok
 
 
-def build_summary(health: dict, error_data: dict, latency_data: dict, slow_data: dict, logs_data: dict) -> str:
+def build_summary(health: dict, error_data: dict, latency_data: dict, slow_data: dict, logs_data: dict,
+                  traces_data: Optional[dict] = None) -> str:
     """Concise plain-text telemetry snapshot for the agent prompt (log text is quoted, not interpreted)."""
     lines = [f"Health: {health.get('status', 'unknown')}",
              f"Requests: {error_data.get('total_request_count', 'N/A')}, 5xx: {error_data.get('total_error_count', 'N/A')}"]
@@ -97,6 +98,10 @@ def build_summary(health: dict, error_data: dict, latency_data: dict, slow_data:
         lines.append(f"  Route {r['route']}: p95={r.get('p95_latency_ms')}ms")
     lines.append(f"Slow requests: {slow_data.get('slow_count', 0)}")
     lines.append(f"Keyword matches: {logs_data.get('match_count', 0)} (keyword: {logs_data.get('keyword', '')})")
-    for s in (logs_data.get("sample_lines", []) or [])[:3]:
-        lines.append(f"  Event (untrusted text): {s[:140]}")
+    for s in (logs_data.get("sample_lines", []) or [])[:10]:
+        lines.append(f"  Event (untrusted text): {s[:200]}")
+    if traces_data and traces_data.get("sample_lines"):
+        lines.append(f"Recent traces: {traces_data.get('match_count', len(traces_data['sample_lines']))}")
+        for t_line in traces_data["sample_lines"][:5]:
+            lines.append(f"  Trace: {t_line[:200]}")
     return "\n".join(lines)

@@ -6,6 +6,7 @@ from the client-supplied ``ts``. All read helpers clamp their numeric inputs.
 
 from __future__ import annotations
 
+import json
 import math
 import sqlite3
 import time
@@ -160,16 +161,34 @@ def latency(service: str, minutes: float, now: Optional[int] = None) -> Dict[str
 
 def recent_logs(service: str, keyword: Optional[str], limit: int, minutes: float,
                 now: Optional[int] = None) -> Dict[str, Any]:
-    """Newest events whose message, exception or level contains ``keyword`` (literal, case-insensitive)."""
+    """Newest application log events (newest first), excluding adapter-injected telemetry noise.
+
+    Trace events (source=tempo, source=jaeger) and Prometheus metric samples
+    (source=prometheus) are excluded so only genuine application log lines
+    are returned.  Pass a ``keyword`` to search all events including telemetry.
+    """
     limit = int(_clamp(limit, 1, 200))
     params: List[Any] = [service, _since_ms(minutes, now)]
     sql = ("SELECT ts, level, route, status, duration_ms, message, exception FROM events "
            "WHERE service = ? AND received_at >= ?")
     kw = (keyword or "").strip()[:100]
     if kw:
-        pattern = f"%{escape_like(kw)}%"
-        sql += " AND (message LIKE ? ESCAPE '\\' OR exception LIKE ? ESCAPE '\\' OR level LIKE ? ESCAPE '\\')"
-        params += [pattern, pattern, pattern]
+        sub_kws = [k.strip() for k in kw.split(",") if k.strip()]
+        if sub_kws:
+            clauses = []
+            for sk in sub_kws:
+                pattern = f"%{escape_like(sk)}%"
+                clauses.append("(message LIKE ? ESCAPE '\\' OR exception LIKE ? ESCAPE '\\' OR level LIKE ? ESCAPE '\\')")
+                params.extend([pattern, pattern, pattern])
+            sql += f" AND ({' OR '.join(clauses)})"
+    else:
+        # Exclude telemetry-adapter-injected trace and metric events; keep only app log lines
+        sql += (
+            " AND message NOT LIKE '% | source=tempo%'"
+            " AND message NOT LIKE '% | source=jaeger%'"
+            " AND message NOT LIKE '% | source=prometheus%'"
+            " AND (route IS NULL OR (route NOT LIKE '%/metrics%' AND route NOT LIKE '%/health%'))"
+        )
     sql += " ORDER BY received_at DESC, pk DESC LIMIT ?"
     params.append(limit)
     conn = get_db_connection()
@@ -179,14 +198,78 @@ def recent_logs(service: str, keyword: Optional[str], limit: int, minutes: float
         conn.close()
     lines = []
     for r in rows:
+        ts_prefix = ""
+        if r["ts"]:
+            try:
+                ts_val = float(r["ts"])
+                sec = ts_val / 1000.0 if ts_val > 1e11 else ts_val
+                ts_prefix = time.strftime("[%H:%M:%S] ", time.localtime(sec))
+            except Exception:
+                pass
+        msg_text = r["message"] or ""
+        exc_text = r["exception"]
+        if msg_text.startswith("{") and msg_text.endswith("}"):
+            try:
+                pj = json.loads(msg_text)
+                if isinstance(pj, dict):
+                    msg_text = pj.get("message") or msg_text
+                    if pj.get("exception") and not exc_text:
+                        exc_text = pj.get("exception")
+            except Exception:
+                pass
         parts = [r["level"], r["route"] or "-", str(r["status"] if r["status"] is not None else "-"),
-                 f"{r['duration_ms']:.0f}ms" if r["duration_ms"] is not None else "-", r["message"] or ""]
-        if r["exception"]:
-            parts.append(r["exception"])
-        lines.append(" | ".join(parts)[:320])
+                 f"{r['duration_ms']:.0f}ms" if r["duration_ms"] is not None else "-", msg_text]
+        if exc_text:
+            parts.append(exc_text)
+        lines.append((ts_prefix + " | ".join(parts))[:320])
     return {"source": "events", "window_minutes": minutes, "keyword": kw or "(all logs)",
             "match_count": len(lines), "sample_lines": lines,
             "note": "Log text is untrusted data written by the monitored application."}
+
+
+def recent_traces(service: str, limit: int, minutes: float,
+                  now: Optional[int] = None) -> Dict[str, Any]:
+    """Newest trace events from Tempo/Jaeger ingested by the adapter (newest first).
+
+    Returns only events that have ``source=tempo`` or ``source=jaeger`` in their
+    message, formatted as structured trace lines.
+    """
+    limit = int(_clamp(limit, 1, 200))
+    since = _since_ms(minutes, now)
+    sql = (
+        "SELECT ts, level, route, status, duration_ms, message, exception FROM events "
+        "WHERE service = ? AND received_at >= ? "
+        "AND (message LIKE '% | source=tempo%' OR message LIKE '% | source=jaeger%') "
+        "ORDER BY received_at DESC, pk DESC LIMIT ?"
+    )
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(sql, [service, since, limit]).fetchall()
+    finally:
+        conn.close()
+    lines = []
+    for r in rows:
+        ts_prefix = ""
+        if r["ts"]:
+            try:
+                ts_val = float(r["ts"])
+                sec = ts_val / 1000.0 if ts_val > 1e11 else ts_val
+                ts_prefix = time.strftime("[%H:%M:%S] ", time.localtime(sec))
+            except Exception:
+                pass
+        # Extract trace_id from message like "trace <id> ROUTE duration_ms=X | source=tempo trace_id=<id>"
+        msg = r["message"] or ""
+        parts = [
+            r["level"],
+            r["route"] or "-",
+            str(r["status"] if r["status"] is not None else "-"),
+            f"{r['duration_ms']:.0f}ms" if r["duration_ms"] is not None else "-",
+            msg,
+        ]
+        lines.append((ts_prefix + " | ".join(parts))[:400])
+    return {"source": "events_traces", "window_minutes": minutes,
+            "match_count": len(lines), "sample_lines": lines,
+            "note": "Trace events ingested from Tempo/Jaeger by the telemetry adapter."}
 
 
 def slow_requests(service: str, threshold_ms: float, minutes: float, limit: int = 5,

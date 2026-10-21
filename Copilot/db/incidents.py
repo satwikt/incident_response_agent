@@ -86,6 +86,38 @@ def list_recent(service: str, limit: int = 50) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def list_all(service: Optional[str] = None, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    try:
+        clauses: List[str] = []
+        args: List[Any] = []
+        if service:
+            clauses.append("service = ?")
+            args.append(service)
+        if status:
+            clauses.append("status = ?")
+            args.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"SELECT * FROM incidents {where} ORDER BY seq DESC LIMIT ?"
+        args.append(max(1, min(limit, 500)))
+        rows = conn.execute(query, tuple(args)).fetchall()
+        return [_row(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def list_events(incident_id: str) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, incident_id, ts, kind, actor, detail FROM incident_events WHERE incident_id = ? ORDER BY id ASC",
+            (incident_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def find_recent_resolved(service: str, fingerprint_ids: set, since_ms: int) -> Optional[Dict[str, Any]]:
     """Most recently resolved incident sharing a fingerprint, resolved at or after ``since_ms``."""
     conn = get_db_connection()

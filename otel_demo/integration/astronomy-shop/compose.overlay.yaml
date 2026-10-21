@@ -1,0 +1,49 @@
+# Integration overlay for the upstream OpenTelemetry Astronomy Shop.
+# Combine with the upstream compose.yaml/full/observability layers.
+# Requires compose.observability.yaml: the extras pipeline reuses its
+# otlp_grpc/jaeger and otlp_http/prometheus exporters.
+
+services:
+  tempo:
+    image: grafana/tempo:latest
+    container_name: astronomy-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ../../integration/astronomy-shop/tempo-config.yaml:/etc/tempo.yaml:ro
+    ports:
+      - "127.0.0.1:3200:3200"
+
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: astronomy-loki
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+
+  grafana:
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      # Nested mounts add LGTM datasources and curriculum alerts to upstream Grafana.
+      - ../../integration/astronomy-shop/grafana/provisioning/datasources/lgtm.yaml:/etc/grafana/provisioning/datasources/lgtm.yaml:ro
+      - ../../integration/astronomy-shop/grafana/provisioning/alerting/astronomy-shop-alerts.yaml:/etc/grafana/provisioning/alerting/astronomy-shop-alerts.yaml:ro
+      - ../../integration/astronomy-shop/grafana/dashboards/astronomy-shop-investigation.json:/etc/grafana/provisioning/dashboards/demo/astronomy-shop-investigation.json:ro
+
+  otel-collector:
+    command:
+      - "--config=/etc/otelcol-config.yml"
+      - "--config=/etc/otelcol-config-full.yml"
+      - "--config=/etc/otelcol-config-observability.yml"
+      - "--config=/etc/otelcol-config-extras.yml"
+      - "--feature-gates=service.profilesSupport"
+    depends_on:
+      tempo:
+        condition: service_started
+      loki:
+        condition: service_started
+    volumes:
+      # Compose merges volumes by container target, so this replaces the
+      # upstream extras mount and activates the LGTM exporter below. Without
+      # this mount the extras file is never loaded by the collector.
+      - ../../integration/astronomy-shop/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml:ro

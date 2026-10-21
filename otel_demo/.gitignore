@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+
+# Node
+node_modules/
+
+# Local agent-tooling state (not part of the deliverable)
+.opencode/
+.freebuff/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# NOTE: vendor/opentelemetry-demo/.gitignore ignores 7 files that upstream
+# actually tracks (src/currency/proto/..., src/flagd-ui/assets/vendor/...,
+# src/flagd-ui/rel/overlays/bin/...). A shallower .gitignore cannot re-include
+# them, so they are added with `git add -f`; once tracked they stay tracked.

@@ -15,8 +15,11 @@ __pycache__/
 *.py[oc]
 .venv/
 *.egg-info/
-
+.pytest_cache
 # local-only material (not part of the project)
+.DS_Store
+*/.DS_Store
+Copilot/data/chroma_db/
 Claude outputs/
 *.docx
 

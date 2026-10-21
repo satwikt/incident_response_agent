@@ -30,7 +30,7 @@ class WatcherThresholds:
     # Comma-separated keywords; a match in recent events counts as a breach.
     log_keywords: List[str] = field(default_factory=lambda: [
         kw.strip()
-        for kw in os.getenv("ALERT_LOG_KEYWORDS", "CRITICAL,Traceback").split(",")
+        for kw in os.getenv("ALERT_LOG_KEYWORDS", "CRITICAL,Traceback,FATAL,panic,OutOfMemoryError").split(",")
         if kw.strip()
     ])
 

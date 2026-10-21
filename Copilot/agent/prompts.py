@@ -11,7 +11,9 @@ def _allowed() -> str:
 
 def describe_match(m: dict) -> str:
     """One line describing a recalled incident, from the local record (provenance) where available."""
-    bits = [f"{m['incident_id']} ({m.get('source', 'live')}, {'same fingerprint' if m.get('exact') else 'similar'})"]
+    score = m.get("score")
+    score_str = f", confidence={score:.0%}" if score is not None else ""
+    bits = [f"{m['incident_id']} ({m.get('source', 'live')}, {'same fingerprint' if m.get('exact') else 'similar'}{score_str})"]
     if m.get("context"):
         bits.append(f"runtime context then: {m['context']}")
     if m.get("evidence"):

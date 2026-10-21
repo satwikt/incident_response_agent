@@ -89,6 +89,7 @@ def collect(window: float) -> dict:
         "latency": tools.get_latency(window),
         "slow": tools.get_slow_requests(thresholds.slow_request_min_ms, window),
         "logs": tools.get_recent_logs(",".join(thresholds.log_keywords), thresholds.log_scan_limit, window),
+        "traces": tools.get_traces(window, limit=5),
     }
 
 
@@ -133,7 +134,7 @@ def handle_actions(actions: List[Action], data: dict, submit: Submit, now: int) 
                 # Memory-first: a known problem with a confirmed fix needs a light verification, not a full diagnosis.
                 kind, prompt = "verify", build_verify_prompt(inc["evidence"], context, exact_fix[:2])
             else:
-                summary = build_summary(data["health"], data["error"], data["latency"], data["slow"], data["logs"])
+                summary = build_summary(data["health"], data["error"], data["latency"], data["slow"], data["logs"], data.get("traces"))
                 kind, prompt = "full", build_alert_prompt(inc["evidence"], summary, matches or None)
             incidents.update_fields(inc["id"], diagnosis_mode=kind, context_sample=context or None)
             _notify("opened", incidents.get(inc["id"]) or inc, now)
@@ -188,7 +189,7 @@ def resume_pending(window: float, submit: Submit) -> int:
     """After a restart: re-queue diagnoses that never finished. Returns how many were queued."""
     n = 0
     data = collect(window)
-    summary = build_summary(data["health"], data["error"], data["latency"], data["slow"], data["logs"])
+    summary = build_summary(data["health"], data["error"], data["latency"], data["slow"], data["logs"], data.get("traces"))
     for inc in incidents.list_active(config.SERVICE_NAME):
         if inc["rca_status"] == "pending":
             submit(inc["id"], build_alert_prompt(inc["evidence"], summary, inc.get("recalled") or None),

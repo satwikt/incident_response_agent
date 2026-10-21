@@ -12,10 +12,83 @@ request first; the model still sees every message, tool call and tool result.
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 from typing import Any
 
+from agent import config
+
+log = logging.getLogger("copilot.llm")
+
 _CLASS_CACHE: dict[str, Any] = {}
+
+
+
+def clean_agent_output(text: str) -> str:
+    """Sanitize agent output by stripping reasoning blocks, thinking tags, and monologue preambles."""
+    if not text:
+        return ""
+
+    cleaned = text
+
+    # 1. Strip explicit thought and reasoning XML-style tags
+    cleaned = re.sub(r"<(thought|think|reasoning)>.*?</\1>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    # Strip unclosed thought tags if output was cut off
+    cleaned = re.sub(r"<(thought|think|reasoning)>.*", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+
+    # 2. Fix glued sentences where sentence end is immediately followed by capital letter (e.g. "observed.There" -> "observed.\n\nThere")
+    cleaned = re.sub(r"([a-z0-9\.\)\]])\.([A-Z])", r"\1.\n\n\2", cleaned)
+
+    # 3. Strip sentences that are tool narration or operational planning
+    narration_patterns = [
+        r"Let me (also )?(check|query|inspect|run|look|examine)[^\.\n]*[\.\n]?",
+        r"Checking [^\.\n]*[\.\n]?",
+        r"I will (now )?(check|query|inspect|run|look|examine)[^\.\n]*[\.\n]?",
+    ]
+    for pat in narration_patterns:
+        cleaned = re.sub(pat, "", cleaned, flags=re.IGNORECASE)
+
+    # 4. Split into paragraphs and remove monologue / meta-commentary preambles
+    monologue_starters = (
+        "the user is asking",
+        "the user wants",
+        "the user is inquiring",
+        "i need to",
+        "i have tried",
+        "i've tried",
+        "i should report",
+        "i will report",
+        "i have checked",
+        "this indicates that there's no telemetry data currently available",
+        "this indicates that there's no telemetry data",
+    )
+
+    paragraphs = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
+    substantive_paragraphs = []
+
+    found_first_substantive = False
+    for p in paragraphs:
+        p_lower = p.lower()
+        if not found_first_substantive:
+            is_monologue = any(p_lower.startswith(prefix) for prefix in monologue_starters)
+            if not is_monologue and "i should report what i found honestly" in p_lower:
+                is_monologue = True
+
+            if is_monologue:
+                continue
+
+            found_first_substantive = True
+            substantive_paragraphs.append(p)
+        else:
+            substantive_paragraphs.append(p)
+
+    if substantive_paragraphs:
+        cleaned = "\n\n".join(substantive_paragraphs)
+    else:
+        cleaned = paragraphs[-1] if paragraphs else ""
+
+    return cleaned.strip()
 
 
 def strip_thought_parts(llm_request: Any) -> int:
@@ -39,16 +112,52 @@ def strip_thought_parts(llm_request: Any) -> int:
 
 def _provider_safe_litellm_class() -> Any:
     if "cls" not in _CLASS_CACHE:
-        # Imported lazily so the Gemini-only path (and the unit tests) do not need litellm.
-        from google.adk.models.lite_llm import LiteLlm
+        try:
+            # Imported lazily so the Gemini-only path (and the unit tests) do not need litellm.
+            from google.adk.models.lite_llm import LiteLlm
 
-        class ProviderSafeLiteLlm(LiteLlm):
-            async def generate_content_async(self, llm_request, stream: bool = False):
-                strip_thought_parts(llm_request)
-                async for response in super().generate_content_async(llm_request, stream=stream):
-                    yield response
+            class ProviderSafeLiteLlm(LiteLlm):
+                def __init__(self, model: str, fallback_model: Any = None, **kwargs: Any) -> None:
+                    super().__init__(model=model, **kwargs)
+                    self._fallback_model = fallback_model
 
-        _CLASS_CACHE["cls"] = ProviderSafeLiteLlm
+                async def generate_content_async(self, llm_request, stream: bool = False):
+                    strip_thought_parts(llm_request)
+                    try:
+                        async for response in super().generate_content_async(llm_request, stream=stream):
+                            yield response
+                    except Exception as exc:
+                        if self._fallback_model is not None:
+                            fallback_name = getattr(self._fallback_model, "model", str(self._fallback_model))
+                            log.warning("Primary model '%s' failed (%s). Falling back to Groq model '%s'.",
+                                        self.model, exc, fallback_name)
+                            async for response in self._fallback_model.generate_content_async(llm_request, stream=stream):
+                                yield response
+                        else:
+                            raise
+
+            _CLASS_CACHE["cls"] = ProviderSafeLiteLlm
+        except ImportError:
+            class DummyLiteLlm:
+                def __init__(self, *args, fallback_model: Any = None, **kwargs):
+                    self.args = args
+                    self.kwargs = kwargs
+                    self.fallback_model = fallback_model
+                    self.model = kwargs.get("model", args[0] if args else "")
+
+                async def generate_content_async(self, llm_request, stream: bool = False):
+                    strip_thought_parts(llm_request)
+                    if self.kwargs.get("_simulate_failure"):
+                        if self.fallback_model is not None:
+                            fallback_name = getattr(self.fallback_model, "model", str(self.fallback_model))
+                            log.warning("Dummy primary model '%s' failed. Falling back to '%s'.", self.model, fallback_name)
+                            async for response in self.fallback_model.generate_content_async(llm_request, stream=stream):
+                                yield response
+                            return
+                        raise ConnectionError(f"Model {self.model} failed and no fallback configured.")
+                    yield "dummy-response"
+
+            _CLASS_CACHE["cls"] = DummyLiteLlm
     return _CLASS_CACHE["cls"]
 
 
@@ -74,8 +183,103 @@ def litellm_kwargs() -> dict:
     return kwargs
 
 
+def get_groq_fallback_model() -> str:
+    """Return the normalized Groq model identifier."""
+    model = (getattr(config, "GROQ_MODEL", "") or "groq/llama-3.3-70b-versatile").strip()
+    if not model.startswith("groq/") and not model.startswith("openai/"):
+        return f"groq/{model}"
+    return model
+
+
+def build_groq_fallback_model(**extra_kwargs) -> Any:
+    """Build a LiteLLM model instance configured for the Groq fallback."""
+    groq_model = get_groq_fallback_model()
+    kwargs = litellm_kwargs()
+    if getattr(config, "GROQ_API_KEY", ""):
+        kwargs["api_key"] = config.GROQ_API_KEY
+    kwargs.update(extra_kwargs)
+    cls = _provider_safe_litellm_class()
+    return cls(model=groq_model, fallback_model=None, **kwargs)
+
+
+def get_nemotron_model_name(tier: str = "super") -> str:
+    """Return the model identifier configured for the specified Nemotron tier."""
+    t = (tier or "super").strip().lower()
+    if t == "nano":
+        return config.NEMOTRON_NANO_MODEL
+    elif t == "ultra":
+        return config.NEMOTRON_ULTRA_MODEL
+    return config.NEMOTRON_SUPER_MODEL
+
+
+def build_nemotron_model(tier: str = "super", **extra_kwargs) -> Any:
+    """Build an ADK-compatible model instance for a Nemotron tier (nano, super, ultra) via NVIDIA NIM.
+    Falls back to Groq model if configured and NVIDIA NIM fails or is unconfigured.
+    """
+    model_name = get_nemotron_model_name(tier)
+    kwargs = litellm_kwargs()
+
+    # Route through NVIDIA NIM endpoint if API key is provided
+    if config.NVIDIA_API_KEY:
+        kwargs["api_key"] = config.NVIDIA_API_KEY
+        kwargs["api_base"] = config.NVIDIA_BASE_URL
+        if not model_name.startswith("nvidia_nim/") and not model_name.startswith("openai/"):
+            target_model = f"openai/{model_name}"
+        else:
+            target_model = model_name
+    elif getattr(config, "GROQ_API_KEY", ""):
+        log.info("NVIDIA_API_KEY not set. Routing directly to Groq fallback model %s.", get_groq_fallback_model())
+        return build_groq_fallback_model(**extra_kwargs)
+    else:
+        # Fallback to direct name or litellm provider prefix
+        target_model = model_name
+
+    fallback_inst = None
+    if getattr(config, "GROQ_API_KEY", "") or getattr(config, "GROQ_MODEL", ""):
+        groq_model = get_groq_fallback_model()
+        fallback_entry: dict[str, Any] = {"model": groq_model}
+        if getattr(config, "GROQ_API_KEY", ""):
+            fallback_entry["api_key"] = config.GROQ_API_KEY
+        kwargs["fallbacks"] = [fallback_entry]
+        fallback_inst = build_groq_fallback_model(**extra_kwargs)
+
+    kwargs.update(extra_kwargs)
+
+    # In unit tests or environments without Google ADK/LiteLLM, return model name string if not slash-routed
+    if "/" in target_model:
+        return _provider_safe_litellm_class()(model=target_model, fallback_model=fallback_inst, **kwargs)
+    return target_model
+
+
+def build_nano_model(**extra_kwargs) -> Any:
+    """Convenience helper for Nemotron Nano tier."""
+    return build_nemotron_model("nano", **extra_kwargs)
+
+
+def build_super_model(**extra_kwargs) -> Any:
+    """Convenience helper for Nemotron Super tier."""
+    return build_nemotron_model("super", **extra_kwargs)
+
+
+def build_ultra_model(**extra_kwargs) -> Any:
+    """Convenience helper for Nemotron Ultra tier."""
+    return build_nemotron_model("ultra", **extra_kwargs)
+
+
 def build_model(name: str | None = None) -> Any:
-    name = (name or os.getenv("AGENT_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.5-flash").strip()
-    if "/" in name:
-        return _provider_safe_litellm_class()(model=name, **litellm_kwargs())
-    return name
+    raw = (name or os.getenv("AGENT_MODEL") or "super").strip()
+    if raw.lower() in ("nano", "super", "ultra"):
+        return build_nemotron_model(raw.lower())
+    if "/" in raw:
+        kwargs = litellm_kwargs()
+        fallback_inst = None
+        if (getattr(config, "GROQ_API_KEY", "") or getattr(config, "GROQ_MODEL", "")) and not raw.startswith("groq/"):
+            groq_model = get_groq_fallback_model()
+            fallback_entry: dict[str, Any] = {"model": groq_model}
+            if getattr(config, "GROQ_API_KEY", ""):
+                fallback_entry["api_key"] = config.GROQ_API_KEY
+            kwargs["fallbacks"] = [fallback_entry]
+            fallback_inst = build_groq_fallback_model()
+        return _provider_safe_litellm_class()(model=raw, fallback_model=fallback_inst, **kwargs)
+    return raw
+

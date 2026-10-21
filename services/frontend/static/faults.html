@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faults Control Deck | Astronomy Shop</title>
+  <style>
+    :root {
+      --bg-dark: #0a0d14;
+      --bg-card: #121824;
+      --bg-card-hover: #192233;
+      --accent-cyan: #00d2ff;
+      --accent-purple: #7928ca;
+      --border-color: #202b3e;
+      --text-main: #f0f4fc;
+      --text-muted: #8b9bb4;
+      --success: #00e676;
+      --danger: #ff1744;
+      --warning: #ffab00;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: rgba(18, 24, 36, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0.85rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 700;
+      font-size: 1.25rem;
+    }
+
+    .brand svg {
+      width: 28px;
+      height: 28px;
+      fill: none;
+      stroke: var(--accent-cyan);
+      stroke-width: 2;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent-cyan);
+      background: rgba(0, 210, 255, 0.08);
+    }
+
+    .nav-link svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+    }
+
+    main {
+      flex: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+      width: 100%;
+    }
+
+    .header-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1.5rem;
+    }
+
+    .title-area h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, #fff 40%, var(--danger) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .title-area p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .actions-bar {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      padding: 0.6rem 1.1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .btn-reset {
+      background: rgba(0, 230, 118, 0.12);
+      color: var(--success);
+      border-color: rgba(0, 230, 118, 0.3);
+    }
+    .btn-reset:hover {
+      background: var(--success);
+      color: #000;
+    }
+
+    .btn-test {
+      background: rgba(0, 210, 255, 0.12);
+      color: var(--accent-cyan);
+      border-color: rgba(0, 210, 255, 0.3);
+    }
+    .btn-test:hover {
+      background: var(--accent-cyan);
+      color: #000;
+    }
+
+    .btn svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+    }
+
+    /* Fault Cards Grid */
+    .fault-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .fault-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.4rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .fault-card.active {
+      border-color: rgba(255, 23, 68, 0.5);
+      box-shadow: 0 0 20px rgba(255, 23, 68, 0.15);
+      background: linear-gradient(180deg, rgba(255, 23, 68, 0.05), var(--bg-card));
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.8rem;
+    }
+
+    .fault-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .status-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.55rem;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-badge.nominal {
+      background: rgba(0, 230, 118, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(0, 230, 118, 0.25);
+    }
+
+    .status-badge.injected {
+      background: rgba(255, 23, 68, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(255, 23, 68, 0.35);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .fault-desc {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      line-height: 1.45;
+      margin-bottom: 1.25rem;
+    }
+
+    .fault-meta {
+      font-size: 0.75rem;
+      color: var(--accent-cyan);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .toggle-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    /* Switch Component */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 26px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #242f44;
+      transition: 0.25s;
+      border-radius: 26px;
+      border: 1px solid var(--border-color);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #8b9bb4;
+      transition: 0.25s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--danger);
+      border-color: var(--danger);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(22px);
+      background-color: #fff;
+    }
+
+    /* Live Output Console */
+    .console-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    .console-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .console-header h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .console-output {
+      background: #080a0f;
+      border: 1px solid #161f30;
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: "SF Mono", Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      height: 160px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M19.07 4.93l-4.24 4.24M9.17 14.83l-4.24 4.24"/></svg>
+      Astronomy Shop
+    </a>
+    <div class="nav-links">
+      <a href="/" class="nav-link">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        Store
+      </a>
+      <a href="/faults" class="nav-link active">
+        <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Faults Dashboard
+      </a>
+      <a href="http://localhost:8001/dashboard" target="_blank" class="nav-link">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 9h6M15 15h6"/></svg>
+        Incident Copilot
+      </a>
+    </div>
+  </header>
+
+  <main>
+    <div class="header-section">
+      <div class="title-area">
+        <h1>Runtime Fault Injection Deck</h1>
+        <p>Trigger realistic production incidents on live services to evaluate AI Incident Copilot detection and diagnosis.</p>
+      </div>
+      <div class="actions-bar">
+        <button class="btn btn-reset" onclick="resetAllFaults()">
+          <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          Reset All Faults
+        </button>
+        <button class="btn btn-test" onclick="triggerTestOrder()">
+          <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Trigger Test Order
+        </button>
+        <button class="btn btn-test" onclick="burstTraffic(10)">
+          <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          Burst 10 Requests
+        </button>
+      </div>
+    </div>
+
+    <div class="fault-grid">
+      <!-- 1. Payment Gateway Failure -->
+      <div class="fault-card" id="card-payment_failure">
+        <div class="card-top">
+          <div class="fault-title">
+            Payment Failure
+          </div>
+          <span class="status-badge nominal" id="badge-payment_failure">Nominal</span>
+        </div>
+        <p class="fault-desc">Causes <code>checkout</code> to return HTTP 500 when processing credit card payments. Simulates third-party merchant processor timeout.</p>
+        <div class="fault-meta">Target: checkout service (POST /checkout)</div>
+        <div class="toggle-bar">
+          <span style="font-size:0.85rem;color:var(--text-muted);">Active Status</span>
+          <label class="switch">
+            <input type="checkbox" id="switch-payment_failure" onchange="toggleFault('payment_failure', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 1b. Payment DB Query Failure -->
+      <div class="fault-card" id="card-payment_db_fail">
+        <div class="card-top">
+          <div class="fault-title">
+            Payment DB Fail
+          </div>
+          <span class="status-badge nominal" id="badge-payment_db_fail">Nominal</span>
+        </div>
+        <p class="fault-desc">Causes <code>checkout</code> to execute an invalid SQL query against non-existent table <code>payment_transactions_v2</code>, triggering a runtime database failure.</p>
+        <div class="fault-meta">Target: checkout service (POST /checkout -> DB query)</div>
+        <div class="toggle-bar">
+          <span style="font-size:0.85rem;color:var(--text-muted);">Active Status</span>
+          <label class="switch">
+            <input type="checkbox" id="switch-payment_db_fail" onchange="toggleFault('payment_db_fail', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 2. High Latency Injection -->
+      <div class="fault-card" id="card-high_latency">
+        <div class="card-top">
+          <div class="fault-title">
+            High Latency Spike
+          </div>
+          <span class="status-badge nominal" id="badge-high_latency">Nominal</span>
+        </div>
+        <p class="fault-desc">Injects artificial 2.5s - 3.5s delay into checkout processing and catalog calls, causing p95 latency breaches in Prometheus and Tempo.</p>
+        <div class="fault-meta">Target: checkout & catalog services</div>
+        <div class="toggle-bar">
+          <span style="font-size:0.85rem;color:var(--text-muted);">Active Status</span>
+          <label class="switch">
+            <input type="checkbox" id="switch-high_latency" onchange="toggleFault('high_latency', this.checked, {delay_seconds: 3.0})">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 3. DB Pool Exhaustion -->
+      <div class="fault-card" id="card-db_pool_exhaustion">
+        <div class="card-top">
+          <div class="fault-title">
+            DB Pool Exhaustion
+          </div>
+          <span class="status-badge nominal" id="badge-db_pool_exhaustion">Nominal</span>
+        </div>
+        <p class="fault-desc">Simulates a connection pool leak by holding DB connections indefinitely. Subsequent checkout queries fail with HTTP 503 Pool Exhaustion.</p>
+        <div class="fault-meta">Target: checkout service connection pool</div>
+        <div class="toggle-bar">
+          <span style="font-size:0.85rem;color:var(--text-muted);">Active Status</span>
+          <label class="switch">
+            <input type="checkbox" id="switch-db_pool_exhaustion" onchange="toggleFault('db_pool_exhaustion', this.checked, {leak_count: 25})">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 4. Product Image Delay -->
+      <div class="fault-card" id="card-image_delay">
+        <div class="card-top">
+          <div class="fault-title">
+            Product Image Delay
+          </div>
+          <span class="status-badge nominal" id="badge-image_delay">Nominal</span>
+        </div>
+        <p class="fault-desc">Simulates the user scenario where static product images take excessive time to load. Useful for verifying Query Agent image latency diagnosis.</p>
+        <div class="fault-meta">Target: frontend static asset proxy</div>
+        <div class="toggle-bar">
+          <span style="font-size:0.85rem;color:var(--text-muted);">Active Status</span>
+          <label class="switch">
+            <input type="checkbox" id="switch-image_delay" onchange="toggleFault('image_delay', this.checked, {delay_seconds: 3.5})">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 5. Memory Leak -->
+      <div class="fault-card" id="card-memory_leak">
+        <div class="card-top">
+          <div class="fault-title">
+            Memory Leak Simulation
+          </div>
+          <span class="status-badge nominal" id="badge-memory_leak">Nominal</span>
+        </div>
+        <p class="fault-desc">Retains 20 MB memory buffer on every incoming request. Event metadata reports increasing heap allocation and leaked pool memory.</p>
+        <div class="fault-meta">Target: catalog service heap</div>
+        <div class="toggle-bar">
+          <span style="font-size:0.85rem;color:var(--text-muted);">Active Status</span>
+          <label class="switch">
+            <input type="checkbox" id="switch-memory_leak" onchange="toggleFault('memory_leak', this.checked, {mb_per_req: 20})">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 6. Error Spike 503 -->
+      <div class="fault-card" id="card-error_spike">
+        <div class="card-top">
+          <div class="fault-title">
+            Service Error Spike (503)
+          </div>
+          <span class="status-badge nominal" id="badge-error_spike">Nominal</span>
+        </div>
+        <p class="fault-desc">Causes 80% of catalog and browsing requests to fail with HTTP 503 Service Unavailable, triggering sudden error rate alert breaches.</p>
+        <div class="fault-meta">Target: catalog & checkout routes</div>
+        <div class="toggle-bar">
+          <span style="font-size:0.85rem;color:var(--text-muted);">Active Status</span>
+          <label class="switch">
+            <input type="checkbox" id="switch-error_spike" onchange="toggleFault('error_spike', this.checked, {rate: 0.8})">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Console -->
+    <div class="console-section">
+      <div class="console-header">
+        <h3>
+          <svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          Fault Operations Log
+        </h3>
+        <button class="btn btn-test" style="padding:0.25rem 0.6rem;font-size:0.75rem" onclick="document.getElementById('log-box').innerText=''">Clear Log</button>
+      </div>
+      <div class="console-output" id="log-box">[System ready] Ready for fault injection. Select any switch above to inject runtime faults.</div>
+    </div>
+  </main>
+
+  <script>
+    function logMsg(msg) {
+      const box = document.getElementById("log-box");
+      const ts = new Date().toISOString().substring(11, 19);
+      box.innerText = `[${ts}] ${msg}\n` + box.innerText;
+    }
+
+    async function loadFaultStates() {
+      try {
+        const res = await fetch("/api/faults");
+        const data = await res.json();
+        for (const [key, fault] of Object.entries(data)) {
+          updateCardUI(key, fault.enabled);
+        }
+      } catch (err) {
+        logMsg("Failed to query fault states: " + err.message);
+      }
+    }
+
+    function updateCardUI(key, isEnabled) {
+      const card = document.getElementById(`card-${key}`);
+      const badge = document.getElementById(`badge-${key}`);
+      const sw = document.getElementById(`switch-${key}`);
+
+      if (sw) sw.checked = isEnabled;
+      if (card) {
+        if (isEnabled) card.classList.add("active");
+        else card.classList.remove("active");
+      }
+      if (badge) {
+        badge.className = isEnabled ? "status-badge injected" : "status-badge nominal";
+        badge.innerText = isEnabled ? "Injected" : "Nominal";
+      }
+    }
+
+    async function toggleFault(faultType, enabled, params = {}) {
+      logMsg(`Setting fault '${faultType}' -> ${enabled ? "ACTIVE" : "DISABLED"}...`);
+      try {
+        const res = await fetch("/api/faults", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fault_type: faultType, enabled: enabled, params: params }),
+        });
+        const data = await res.json();
+        updateCardUI(faultType, enabled);
+        logMsg(`Fault '${faultType}' state confirmed: enabled=${enabled}`);
+      } catch (err) {
+        logMsg(`Error toggling fault '${faultType}': ${err.message}`);
+      }
+    }
+
+    async function resetAllFaults() {
+      logMsg("Resetting all runtime faults to nominal...");
+      try {
+        const res = await fetch("/api/faults/reset", { method: "POST" });
+        await res.json();
+        const keys = ["payment_failure", "payment_db_fail", "high_latency", "db_pool_exhaustion", "image_delay", "memory_leak", "error_spike"];
+        keys.forEach(k => updateCardUI(k, false));
+        logMsg("All faults successfully CLEARED. System nominal.");
+      } catch (err) {
+        logMsg("Reset error: " + err.message);
+      }
+    }
+
+    async function triggerTestOrder() {
+      logMsg("Submitting test checkout order to evaluate fault responses...");
+      try {
+        const res = await fetch("/api/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cart_id: "test-cart-" + Math.random().toString(36).substring(2, 6),
+            customer_email: "fault-tester@astronomy.local",
+            shipping_address: "Test Lab 1",
+            payment_method: "credit_card",
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          logMsg(`SUCCESS: Order ${data.id} confirmed for $${data.total_usd} (Status: 200 OK)`);
+        } else {
+          logMsg(`BREACH DETECTED: HTTP ${res.status} - ${data.detail || "Internal Error"}`);
+        }
+      } catch (err) {
+        logMsg(`ERROR: ${err.message}`);
+      }
+    }
+
+    async function burstTraffic(count = 10) {
+      logMsg(`Bursting ${count} requests across catalog & checkout...`);
+      for (let i = 1; i <= count; i++) {
+        fetch("/api/products").catch(() => {});
+        if (i % 3 === 0) triggerTestOrder();
+      }
+      logMsg(`Fired ${count} burst requests. Check Grafana / Copilot dashboard.`);
+    }
+
+    loadFaultStates();
+  </script>
+</body>
+</html>

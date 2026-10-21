@@ -1,0 +1,422 @@
+# Alert rules for the Astronomy Shop fault curriculum.
+# Metric names and labels mirror the upstream dashboards at the pinned commit.
+# Mounted into the upstream Grafana by compose.overlay.yaml; queries use the
+# existing `webstore-metrics` Prometheus datasource.
+
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: AstronomyShopIntegration
+    folder: Astronomy Shop Integration
+    interval: 1m
+    rules:
+      - uid: as-checkout-error-rate
+        title: AstronomyShopCheckoutErrorRate
+        condition: threshold
+        data:
+          - refId: query
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: webstore-metrics
+            model:
+              editorMode: code
+              expr: sum(rate(http_server_request_duration_seconds_count{service_name="checkout",http_response_status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{service_name="checkout"}[5m])), 0.001)
+              instant: true
+              range: false
+              refId: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              legendFormat: __auto
+          - refId: threshold
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.1
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - threshold
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: threshold
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: Checkout 5xx error rate is above 10 percent
+          description: >-
+            Checkout is returning 5xx responses above the baseline rate. Check
+            the checkout to payment dependency edge before assuming the payment
+            service is the cause.
+        labels:
+          severity: critical
+          service: checkout
+          scenarios: T-02,T-04
+          team_name: webstore
+        isPaused: false
+
+      - uid: as-payment-error-spans
+        title: AstronomyShopPaymentErrorSpans
+        condition: threshold
+        data:
+          - refId: query
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: webstore-metrics
+            model:
+              editorMode: code
+              expr: sum(rate(traces_span_metrics_calls_total{service_name="payment",status_code="STATUS_CODE_ERROR"}[5m]))
+              instant: true
+              range: false
+              refId: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              legendFormat: __auto
+          - refId: threshold
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - threshold
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: threshold
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: Payment is producing server-side error spans
+          description: >-
+            Payment error spans indicate an application-level charge failure
+            rather than an unreachable dependency.
+        labels:
+          severity: critical
+          service: payment
+          scenario: T-02
+          team_name: webstore
+        isPaused: false
+
+      - uid: as-shipping-p95
+        title: AstronomyShopShippingP95Latency
+        condition: threshold
+        data:
+          - refId: query
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: webstore-metrics
+            model:
+              editorMode: code
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="shipping"}[5m])))
+              instant: true
+              range: false
+              refId: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              legendFormat: __auto
+          - refId: threshold
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 2
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - threshold
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: threshold
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: Shipping p95 latency is above 2 seconds
+          description: >-
+            Compare international and domestic shipping paths to confirm the
+            cohort-specific slowdown before blaming the whole service.
+        labels:
+          severity: warning
+          service: shipping
+          scenario: T-05
+          team_name: webstore
+        isPaused: false
+
+      - uid: as-recommendation-p95
+        title: AstronomyShopRecommendationP95Latency
+        condition: threshold
+        data:
+          - refId: query
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: webstore-metrics
+            model:
+              editorMode: code
+              expr: histogram_quantile(0.95, sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name="recommendation"}[5m])))
+              instant: true
+              range: false
+              refId: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              legendFormat: __auto
+          - refId: threshold
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1000
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - threshold
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: threshold
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: Recommendation p95 span latency is above 1 second
+          description: >-
+            Recommendation latency can degrade progressively when the cache
+            fails. Correlate with memory and CPU trends instead of assuming a
+            downstream HTTP failure.
+        labels:
+          severity: warning
+          service: recommendation
+          scenario: T-06
+          team_name: webstore
+        isPaused: false
+
+      - uid: as-product-catalog-p95
+        title: AstronomyShopProductCatalogP95Latency
+        condition: threshold
+        data:
+          - refId: query
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: webstore-metrics
+            model:
+              editorMode: code
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="product-catalog"}[5m])))
+              instant: true
+              range: false
+              refId: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              legendFormat: __auto
+          - refId: threshold
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - threshold
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: threshold
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: Product catalog p95 latency is above 1 second
+          description: >-
+            Product catalog latency with database lock evidence points at the
+            database rather than the service itself.
+        labels:
+          severity: warning
+          service: product-catalog
+          scenario: T-07
+          team_name: webstore
+        isPaused: false
+
+      - uid: as-postgres-deadlocks
+        title: AstronomyShopPostgresDeadlocks
+        condition: threshold
+        data:
+          - refId: query
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: webstore-metrics
+            model:
+              editorMode: code
+              expr: increase(postgresql_deadlocks_total[5m])
+              instant: true
+              range: false
+              refId: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              legendFormat: __auto
+          - refId: threshold
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - threshold
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: threshold
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: Postgres deadlocks are increasing
+          description: >-
+            Deadlock growth plus product catalog latency is the database lock
+            contention signature from the curriculum.
+        labels:
+          severity: critical
+          service: astronomy-db
+          scenario: T-07
+          team_name: webstore
+        isPaused: false
+
+      # Full-mode only. The kafkametrics receiver metric name is taken from the
+      # receiver's documented metric set; verify it live before relying on it.
+      - uid: as-kafka-consumer-lag
+        title: AstronomyShopKafkaConsumerLag
+        condition: threshold
+        data:
+          - refId: query
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: webstore-metrics
+            model:
+              editorMode: code
+              expr: max(kafka_consumer_group_lag)
+              instant: true
+              range: false
+              refId: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              legendFormat: __auto
+          - refId: threshold
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 100
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - threshold
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: threshold
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: Kafka consumer lag is above 100 records
+          description: >-
+            Full mode only. Rising consumer lag against a healthy producer is
+            the asynchronous backpressure signature.
+        labels:
+          severity: warning
+          service: kafka
+          scenario: T-08
+          mode: full
+          team_name: webstore
+        isPaused: false

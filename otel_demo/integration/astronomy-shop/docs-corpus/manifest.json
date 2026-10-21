@@ -1,0 +1,499 @@
+{
+  "app_version": "85c2cb253ae3",
+  "documents": [
+    {
+      "chunks": 8,
+      "doc_id": "upstream-readme",
+      "service": "platform",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/README.md",
+      "tags": [
+        "overview",
+        "architecture",
+        "deployment"
+      ],
+      "title": "<img src=\"https://opentelemetry.io/img/logos/opentelemetry-logo-nav.png\" alt=\"OTel logo\" width=\"45\"> OpenTelemetry Demo"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "component-accounting",
+      "service": "accounting",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/accounting/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/accounting/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Accounting Service"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "component-ad",
+      "service": "ad",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/ad/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/ad/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Ad Service"
+    },
+    {
+      "chunks": 15,
+      "doc_id": "component-agent",
+      "service": "agent",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/agent/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/agent/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Agent Service"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "component-cart",
+      "service": "cart",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/cart/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/cart/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Cart Service"
+    },
+    {
+      "chunks": 11,
+      "doc_id": "component-chatbot",
+      "service": "chatbot",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/chatbot/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/chatbot/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Chatbot Service"
+    },
+    {
+      "chunks": 6,
+      "doc_id": "component-checkout",
+      "service": "checkout",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/checkout/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/checkout/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Checkout Service"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "component-currency",
+      "service": "currency",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/currency/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/currency/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Currency Service"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "component-email",
+      "service": "email",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/email/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/email/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Email Service"
+    },
+    {
+      "chunks": 6,
+      "doc_id": "component-flagd-ui",
+      "service": "flagd-ui",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/flagd-ui/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/flagd-ui/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Flagd-ui"
+    },
+    {
+      "chunks": 3,
+      "doc_id": "component-fraud-detection",
+      "service": "fraud-detection",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/fraud-detection/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/fraud-detection/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Fraud Detection Service"
+    },
+    {
+      "chunks": 3,
+      "doc_id": "component-frontend",
+      "service": "frontend",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/frontend/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/frontend/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Frontend service"
+    },
+    {
+      "chunks": 2,
+      "doc_id": "component-frontend-proxy",
+      "service": "frontend-proxy",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/frontend-proxy/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/frontend-proxy/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Frontend Proxy Service"
+    },
+    {
+      "chunks": 1,
+      "doc_id": "component-kafka",
+      "service": "kafka",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/kafka/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/kafka/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Kafka"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "component-load-generator",
+      "service": "load-generator",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/load-generator/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/load-generator/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Load Generator"
+    },
+    {
+      "chunks": 10,
+      "doc_id": "component-mcp",
+      "service": "mcp",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/mcp/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/mcp/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "MCP Service"
+    },
+    {
+      "chunks": 1,
+      "doc_id": "component-opamp-server",
+      "service": "opamp-server",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/opamp-server/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/opamp-server/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "OpAMP Server"
+    },
+    {
+      "chunks": 3,
+      "doc_id": "component-payment",
+      "service": "payment",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/payment/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/payment/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Payment Service"
+    },
+    {
+      "chunks": 6,
+      "doc_id": "component-product-catalog",
+      "service": "product-catalog",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/product-catalog/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/product-catalog/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Product Catalog Service"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "component-quote",
+      "service": "quote",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/quote/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/quote/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Quote Service"
+    },
+    {
+      "chunks": 6,
+      "doc_id": "component-react-native-app",
+      "service": "react-native-app",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/react-native-app/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/react-native-app/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Example React Native app"
+    },
+    {
+      "chunks": 3,
+      "doc_id": "component-recommendation",
+      "service": "recommendation",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/recommendation/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/recommendation/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Recommendation Service"
+    },
+    {
+      "chunks": 6,
+      "doc_id": "component-shipping",
+      "service": "shipping",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/shipping/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/shipping/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Shipping Service"
+    },
+    {
+      "chunks": 7,
+      "doc_id": "component-telemetry-docs",
+      "service": "telemetry-docs",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/telemetry-docs/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/telemetry-docs/README.md",
+      "tags": [
+        "component",
+        "service"
+      ],
+      "title": "Telemetry Documentation Service"
+    },
+    {
+      "chunks": 3,
+      "doc_id": "telemetry-schema",
+      "service": "telemetry",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/telemetry-schema/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/telemetry-schema/README.md",
+      "tags": [
+        "telemetry",
+        "schema"
+      ],
+      "title": "OpenTelemetry Demo Telemetry Schema"
+    },
+    {
+      "chunks": 7,
+      "doc_id": "telemetry-docs",
+      "service": "telemetry",
+      "source": "vendor",
+      "source_path": "vendor/opentelemetry-demo/src/telemetry-docs/README.md",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/telemetry-docs/README.md",
+      "tags": [
+        "telemetry",
+        "docs"
+      ],
+      "title": "Telemetry Documentation Service"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "local-architecture",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/architecture.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "architecture",
+        "design"
+      ],
+      "title": "Target Architecture"
+    },
+    {
+      "chunks": 9,
+      "doc_id": "local-requirements",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/requirements.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "requirements"
+      ],
+      "title": "Requirements"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "local-integration-contract",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/integration-contract.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "contract"
+      ],
+      "title": "Integration Contract"
+    },
+    {
+      "chunks": 9,
+      "doc_id": "local-implementation-plan",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/implementation-plan.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "plan"
+      ],
+      "title": "Implementation Plan"
+    },
+    {
+      "chunks": 4,
+      "doc_id": "local-decisions",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/decisions.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "decisions"
+      ],
+      "title": "Architecture Decisions"
+    },
+    {
+      "chunks": 1,
+      "doc_id": "local-test-scenarios",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/test-scenarios.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "scenarios"
+      ],
+      "title": "Test Scenarios"
+    },
+    {
+      "chunks": 7,
+      "doc_id": "local-operations-runbook",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/operations-runbook.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "runbook"
+      ],
+      "title": "Operations Runbook"
+    },
+    {
+      "chunks": 23,
+      "doc_id": "local-code-structure",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/CODE-STRUCTURE.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "code",
+        "structure"
+      ],
+      "title": "Code Structure"
+    },
+    {
+      "chunks": 12,
+      "doc_id": "local-team-guide",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/TEAM-GUIDE.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "guide",
+        "howto"
+      ],
+      "title": "Team Guide"
+    },
+    {
+      "chunks": 22,
+      "doc_id": "local-team-handoff",
+      "service": "copilot-integration",
+      "source": "local",
+      "source_path": "docs/TEAM-HANDOFF.md",
+      "source_url": null,
+      "tags": [
+        "copilot",
+        "handoff",
+        "integration"
+      ],
+      "title": "Team Handoff \u2014 Integration and Completion Owner"
+    },
+    {
+      "chunks": 3,
+      "doc_id": "feature-flags",
+      "service": "flagd",
+      "source": "generated",
+      "source_path": "vendor/opentelemetry-demo/src/flagd/demo.flagd.json",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo/blob/85c2cb253ae3519ef2b3a02984c32614106de5ea/src/flagd/demo.flagd.json",
+      "tags": [
+        "feature-flags",
+        "fault-injection",
+        "scenarios"
+      ],
+      "title": "Astronomy Shop feature flags"
+    }
+  ],
+  "generated_by": "integration/astronomy-shop/tools/build_corpus.py",
+  "totals": {
+    "chunks": 233,
+    "documents": 37
+  },
+  "vendor_commit": "85c2cb253ae3519ef2b3a02984c32614106de5ea",
+  "vendor_path": "vendor/opentelemetry-demo"
+}

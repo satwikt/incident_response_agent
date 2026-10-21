@@ -6,3 +6,5 @@ pydantic
 python-dotenv
 litellm
 hindsight-client
+chromadb
+mcp

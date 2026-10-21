@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Astronomy Shop | Deep Space Equipment</title>
+  <style>
+    :root {
+      --bg-dark: #0a0d14;
+      --bg-card: #121824;
+      --bg-card-hover: #192233;
+      --accent-cyan: #00d2ff;
+      --accent-purple: #7928ca;
+      --border-color: #202b3e;
+      --text-main: #f0f4fc;
+      --text-muted: #8b9bb4;
+      --success: #00e676;
+      --danger: #ff1744;
+      --warning: #ffab00;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header & Navigation */
+    header {
+      background: rgba(18, 24, 36, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0.85rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: -0.5px;
+    }
+
+    .brand svg {
+      width: 28px;
+      height: 28px;
+      fill: none;
+      stroke: var(--accent-cyan);
+      stroke-width: 2;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent-cyan);
+      background: rgba(0, 210, 255, 0.08);
+    }
+
+    .nav-link svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+    }
+
+    .cart-btn {
+      position: relative;
+      background: linear-gradient(135deg, var(--accent-purple), #5b1fa3);
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      box-shadow: 0 4px 14px rgba(121, 40, 202, 0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .cart-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(121, 40, 202, 0.5);
+    }
+
+    .cart-badge {
+      background: var(--accent-cyan);
+      color: #000;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.1rem 0.4rem;
+      border-radius: 10px;
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+      width: 100%;
+    }
+
+    .hero {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .hero h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(135deg, #fff 30%, var(--accent-cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    /* Product Grid */
+    .catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.75rem;
+    }
+
+    .product-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .product-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(0, 210, 255, 0.3);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .card-banner {
+      height: 180px;
+      background: linear-gradient(135deg, #161f30, #0c121d);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-bottom: 1px solid var(--border-color);
+      position: relative;
+    }
+
+    .card-banner svg {
+      width: 64px;
+      height: 64px;
+      stroke: var(--accent-cyan);
+      opacity: 0.85;
+      fill: none;
+      stroke-width: 1.5;
+    }
+
+    .card-body {
+      padding: 1.25rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-category {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent-cyan);
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      line-height: 1.35;
+    }
+
+    .card-desc {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      line-height: 1.45;
+      margin-bottom: 1.25rem;
+      flex: 1;
+    }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .price {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .add-btn {
+      background: rgba(0, 210, 255, 0.1);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0, 210, 255, 0.3);
+      padding: 0.45rem 0.9rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s ease;
+    }
+
+    .add-btn:hover {
+      background: var(--accent-cyan);
+      color: #000;
+      border-color: var(--accent-cyan);
+    }
+
+    /* Cart Drawer Modal */
+    .cart-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      display: none;
+      justify-content: flex-end;
+    }
+
+    .cart-drawer {
+      background: var(--bg-card);
+      width: 100%;
+      max-width: 440px;
+      height: 100%;
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 1.5rem;
+      animation: slideIn 0.25s ease;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 0.25rem;
+    }
+
+    .close-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+    .drawer-items {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .cart-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.8rem;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+
+    .drawer-footer {
+      border-top: 1px solid var(--border-color);
+      padding-top: 1rem;
+    }
+
+    .checkout-btn {
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent-cyan), #0088cc);
+      color: #000;
+      border: none;
+      padding: 0.85rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 1rem;
+      transition: opacity 0.2s ease;
+    }
+
+    .checkout-btn:hover { opacity: 0.9; }
+
+    .alert-box {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-top: 0.75rem;
+      display: none;
+    }
+
+    .alert-box.danger {
+      background: rgba(255, 23, 68, 0.15);
+      border: 1px solid var(--danger);
+      color: #ff80ab;
+    }
+
+    .alert-box.success {
+      background: rgba(0, 230, 118, 0.15);
+      border: 1px solid var(--success);
+      color: #b9f6ca;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M19.07 4.93l-4.24 4.24M9.17 14.83l-4.24 4.24"/></svg>
+      Astronomy Shop
+    </a>
+    <div class="nav-links">
+      <a href="/" class="nav-link active">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        Store
+      </a>
+      <a href="/faults" class="nav-link">
+        <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Faults Dashboard
+      </a>
+      <a href="http://localhost:8001/dashboard" target="_blank" class="nav-link">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 9h6M15 15h6"/></svg>
+        Incident Copilot
+      </a>
+      <button class="cart-btn" onclick="toggleCart(true)">
+        <svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        Cart <span class="cart-badge" id="cart-count">0</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>Deep Space Instrumentation</h1>
+      <p>High-aperture optics, hydrogen-alpha solar filters, and precision tracking mounts instrumented for distributed OpenTelemetry observability.</p>
+    </div>
+
+    <div class="catalog-grid" id="catalog-container">
+      <!-- Products loaded dynamically -->
+    </div>
+  </main>
+
+  <!-- Cart Drawer -->
+  <div class="cart-overlay" id="cart-modal" onclick="if(event.target===this) toggleCart(false)">
+    <div class="cart-drawer">
+      <div class="drawer-header">
+        <h2>Shopping Cart</h2>
+        <button class="close-btn" onclick="toggleCart(false)">
+          <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="drawer-items" id="cart-items">
+        <p style="color:var(--text-muted);text-align:center;margin-top:2rem;">Your cart is empty.</p>
+      </div>
+
+      <div class="drawer-footer">
+        <div style="display:flex;justify-content:space-between;font-weight:700;font-size:1.1rem;">
+          <span>Subtotal:</span>
+          <span id="cart-total">$0.00</span>
+        </div>
+        <div class="alert-box" id="checkout-alert"></div>
+        <button class="checkout-btn" id="btn-checkout" onclick="performCheckout()">Proceed to Checkout</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CART_ID = "cart-" + (localStorage.getItem("astro_cart_id") || Math.random().toString(36).substring(2, 9));
+    localStorage.setItem("astro_cart_id", CART_ID);
+
+    async function loadCatalog() {
+      try {
+        const res = await fetch("/api/products");
+        const products = await res.json();
+        const container = document.getElementById("catalog-container");
+        container.innerHTML = products.map(p => `
+          <div class="product-card">
+            <div class="card-banner">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+            </div>
+            <div class="card-body">
+              <span class="card-category">${p.category}</span>
+              <h3 class="card-title">${p.name}</h3>
+              <p class="card-desc">${p.description}</p>
+              <div class="card-footer">
+                <span class="price">$${p.price_usd.toFixed(2)}</span>
+                <button class="add-btn" onclick="addToCart('${p.id}')">
+                  <svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add to Cart
+                </button>
+              </div>
+            </div>
+          </div>
+        `).join("");
+      } catch (err) {
+        console.error("Failed to load catalog:", err);
+      }
+    }
+
+    async function addToCart(productId) {
+      try {
+        const res = await fetch(`/api/cart/${CART_ID}/items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ product_id: productId, quantity: 1 }),
+        });
+        const cart = await res.json();
+        updateCartUI(cart);
+        toggleCart(true);
+      } catch (err) {
+        console.error("Add to cart error:", err);
+      }
+    }
+
+    async function refreshCart() {
+      try {
+        const res = await fetch(`/api/cart/${CART_ID}`);
+        const cart = await res.json();
+        updateCartUI(cart);
+      } catch (err) {
+        console.error("Fetch cart error:", err);
+      }
+    }
+
+    function updateCartUI(cart) {
+      const countEl = document.getElementById("cart-count");
+      const totalEl = document.getElementById("cart-total");
+      const itemsEl = document.getElementById("cart-items");
+
+      const totalItems = (cart.items || []).reduce((sum, i) => sum + i.quantity, 0);
+      countEl.innerText = totalItems;
+      totalEl.innerText = `$${(cart.total_usd || 0).toFixed(2)}`;
+
+      if (!cart.items || cart.items.length === 0) {
+        itemsEl.innerHTML = `<p style="color:var(--text-muted);text-align:center;margin-top:2rem;">Your cart is empty.</p>`;
+        return;
+      }
+
+      itemsEl.innerHTML = cart.items.map(item => `
+        <div class="cart-item">
+          <div>
+            <div style="font-weight:600;font-size:0.95rem;">${item.product_name || item.product_id}</div>
+            <div style="color:var(--text-muted);font-size:0.8rem;">Qty: ${item.quantity} × $${item.price_usd.toFixed(2)}</div>
+          </div>
+          <div style="font-weight:700;">$${(item.quantity * item.price_usd).toFixed(2)}</div>
+        </div>
+      `).join("");
+    }
+
+    async function performCheckout() {
+      const alertBox = document.getElementById("checkout-alert");
+      const btn = document.getElementById("btn-checkout");
+      alertBox.style.display = "none";
+      btn.disabled = true;
+      btn.innerText = "Processing Order...";
+
+      try {
+        const res = await fetch("/api/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cart_id: CART_ID,
+            customer_email: "astro.user@example.com",
+            shipping_address: "Observatory Hill, Dome 4, Mauna Kea",
+            payment_method: "credit_card",
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || `Checkout failed with status ${res.status}`);
+        }
+
+        alertBox.className = "alert-box success";
+        alertBox.innerText = `Order Confirmed: ${data.id} (Total: $${data.total_usd.toFixed(2)})`;
+        alertBox.style.display = "block";
+        refreshCart();
+      } catch (err) {
+        alertBox.className = "alert-box danger";
+        alertBox.innerText = `Error: ${err.message}`;
+        alertBox.style.display = "block";
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Proceed to Checkout";
+      }
+    }
+
+    function toggleCart(show) {
+      document.getElementById("cart-modal").style.display = show ? "flex" : "none";
+    }
+
+    loadCatalog();
+    refreshCart();
+  </script>
+</body>
+</html>

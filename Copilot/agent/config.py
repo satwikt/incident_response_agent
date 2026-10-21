@@ -94,6 +94,25 @@ AGENT_RATE_LIMIT_WAIT_S: float = _float("AGENT_RATE_LIMIT_WAIT_S", 45.0)
 BREAKER_FAILURES: int = _int("BREAKER_FAILURES", 3)          # consecutive failures that open the circuit breaker
 BREAKER_PAUSE_S: float = _float("BREAKER_PAUSE_S", 300.0)    # how long the breaker stays open
 
+# ── NVIDIA Nemotron Model Tiers ───────────────────────────────────────────────
+NVIDIA_API_KEY: str = os.getenv("NVIDIA_API_KEY", "")
+NVIDIA_BASE_URL: str = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
+# Nano: minimal reasoning for same-context recurring incidents (fast adjustments)
+NEMOTRON_NANO_MODEL: str = os.getenv("NEMOTRON_NANO_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
+# Super: mid reasoning for similar incidents with different context (guided RCA)
+NEMOTRON_SUPER_MODEL: str = os.getenv("NEMOTRON_SUPER_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b")
+# Ultra: deep multi-step reasoning for completely new incidents (scratch RCA)
+NEMOTRON_ULTRA_MODEL: str = os.getenv("NEMOTRON_ULTRA_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b")
+
+# ── Groq Fallback Model ───────────────────────────────────────────────────────
+GROQ_API_KEY: str = (os.getenv("GROQ_API_KEY", "") or os.getenv("HINDSIGHT_LLM_API_KEY", "")).strip()
+_raw_groq_model = (os.getenv("GROQ_MODEL", "") or os.getenv("GROQ_FALLBACK_MODEL", "groq/llama-3.3-70b-versatile")).strip()
+if _raw_groq_model and not _raw_groq_model.startswith("groq/") and not _raw_groq_model.startswith("openai/"):
+    GROQ_MODEL: str = f"groq/{_raw_groq_model}"
+else:
+    GROQ_MODEL: str = _raw_groq_model or "groq/llama-3.3-70b-versatile"
+
+
 # ── Outbox (notifications) ────────────────────────────────────────────────────
 OUTBOX_MAX_ATTEMPTS: int = _int("OUTBOX_MAX_ATTEMPTS", 6)
 OUTBOX_LEASE_S: float = _float("OUTBOX_LEASE_S", 60.0)
@@ -109,6 +128,18 @@ MEMORY_MIN_SCORE: float = _float("MEMORY_MIN_SCORE", 0.05)   # on the FINAL reca
 # ── Remediation (allow-list) and the action journal ───────────────────────────
 # Only these actions can ever be proposed; anything else in a model answer is ignored.
 ALLOWED_ACTIONS = tuple(a.strip() for a in os.getenv(
-    "ALLOWED_ACTIONS", "flush_pool,restart_worker,rollback_config,rollback_release,enable_fallback").split(",") if a.strip())
+    "ALLOWED_ACTIONS",
+    "flush_pool,restart_worker,rollback_config,rollback_release,enable_fallback,create_missing_table,run_db_migration,apply_schema_migration,disable_fault,hotfix_query,patch_code"
+).split(",") if a.strip())
 APP_OPS_URL: str = os.getenv("APP_OPS_URL", "").rstrip("/")
 OPS_KEY: str = os.getenv("OPS_KEY", "")
+
+# ── External Observability & Telemetry APIs ──────────────────────────────────
+PROMETHEUS_URL: str = os.getenv("PROMETHEUS_URL", "http://prometheus:9090").rstrip("/")
+LOKI_URL: str = os.getenv("LOKI_URL", "http://loki:3100").rstrip("/")
+TEMPO_URL: str = os.getenv("TEMPO_URL", "http://tempo:3200").rstrip("/")
+JAEGER_URL: str = os.getenv("JAEGER_URL", "http://jaeger:16686").rstrip("/")
+FLAGD_URL: str = os.getenv("FLAGD_URL", "http://flagd:8080").rstrip("/")
+DOCS_INDEX_PATH: str = os.getenv("DOCS_INDEX_PATH", "data/docs_index.json")
+CHROMA_DB_PATH: str = os.getenv("CHROMA_DB_PATH", "Copilot/data/chroma_db")
+CHROMA_COLLECTION: str = os.getenv("CHROMA_COLLECTION", "astronomy_shop_docs")

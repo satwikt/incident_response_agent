@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from api.ingest import router as ingest_router
 from api.router import router
+from api.dashboard import router as dashboard_router
 from agent.watcher import start_watcher, stop_watcher
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend")
@@ -28,6 +29,7 @@ app = FastAPI(title="Incident Response Copilot", lifespan=lifespan, docs_url=Non
 
 app.include_router(ingest_router)
 app.include_router(router)
+app.include_router(dashboard_router)
 
 
 @app.get("/health")
@@ -39,6 +41,14 @@ async def health():
 async def ui_root():
     return FileResponse(
         os.path.join(FRONTEND_DIR, "index.html"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+@app.get("/dashboard")
+async def dashboard_ui():
+    return FileResponse(
+        os.path.join(FRONTEND_DIR, "dashboard.html"),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
 

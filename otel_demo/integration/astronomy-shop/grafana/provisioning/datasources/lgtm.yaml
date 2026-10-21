@@ -1,0 +1,31 @@
+# Grafana datasources for the LGTM overlay (Tempo + Loki).
+# Mounted into the upstream Grafana container by compose.overlay.yaml.
+# Trace -> log pivot is provisioned here; exemplar links stay on the upstream
+# Prometheus datasource until the LGTM Prometheus endpoint is verified live.
+
+apiVersion: 1
+
+datasources:
+  - name: LGTM Tempo
+    uid: lgtm-traces
+    type: tempo
+    url: http://tempo:3200
+    access: proxy
+    editable: true
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: lgtm-logs
+        spanStartTimeShift: "-20m"
+        spanEndTimeShift: "20m"
+        filterByTraceID: true
+        filterBySpanID: true
+        tags:
+          - key: service.name
+            value: service_name
+
+  - name: LGTM Loki
+    uid: lgtm-logs
+    type: loki
+    url: http://loki:3100
+    access: proxy
+    editable: true

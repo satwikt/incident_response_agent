@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "description": "Read-only observability tool contract for the AI SRE Copilot. Implementations must not expose write, shell, or arbitrary HTTP capabilities.",
+  "envelope": {
+    "success": {
+      "ok": true,
+      "source": "prometheus",
+      "window": {"start": "2026-10-20T10:00:00Z", "end": "2026-10-20T10:05:00Z"},
+      "data": [],
+      "truncated": false,
+      "error": null
+    },
+    "error": {
+      "ok": false,
+      "source": "prometheus",
+      "window": null,
+      "data": [],
+      "truncated": false,
+      "error": {"code": "backend_unavailable", "message": "Prometheus request failed"}
+    }
+  },
+  "error_codes": [
+    "invalid_argument",
+    "backend_unavailable",
+    "timeout",
+    "not_found",
+    "too_large",
+    "internal"
+  ],
+  "limits": {
+    "timeout_seconds": 5,
+    "max_window_hours": 24,
+    "max_query_chars": 2000,
+    "max_rows": 200,
+    "max_response_bytes": 262144
+  },
+  "tools": [
+    {
+      "name": "query_prometheus",
+      "description": "Run one PromQL query over a bounded window and return samples.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "maxLength": 2000},
+          "start": {"type": "string", "description": "ISO 8601 or epoch seconds"},
+          "end": {"type": "string", "description": "ISO 8601 or epoch seconds"},
+          "step": {"type": "string", "default": "60s"},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50}
+        },
+        "required": ["query", "start", "end"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "query_loki",
+      "description": "Run one LogQL range query over a bounded window and return log records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "maxLength": 2000},
+          "start": {"type": "string"},
+          "end": {"type": "string"},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 100},
+          "direction": {"type": "string", "enum": ["backward", "forward"], "default": "backward"}
+        },
+        "required": ["query", "start", "end"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "query_tempo",
+      "description": "Search Tempo for traces belonging to a service in a bounded window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {"type": "string", "maxLength": 200},
+          "start": {"type": "string"},
+          "end": {"type": "string"},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+          "tags": {"type": "string", "maxLength": 500}
+        },
+        "required": ["service", "start", "end"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "query_jaeger",
+      "description": "Search Jaeger for traces belonging to a service in a bounded window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {"type": "string", "maxLength": 200},
+          "start": {"type": "string"},
+          "end": {"type": "string"},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+          "operation": {"type": "string", "maxLength": 200}
+        },
+        "required": ["service", "start", "end"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_trace",
+      "description": "Fetch one trace by ID from Tempo or Jaeger and return normalized spans.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "trace_id": {"type": "string", "pattern": "^[0-9a-fA-F]{16,32}$"},
+          "backend": {"type": "string", "enum": ["tempo", "jaeger"], "default": "tempo"}
+        },
+        "required": ["trace_id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_flag_state",
+      "description": "Read the current flagd configuration. This tool never writes flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "flag": {"type": "string", "maxLength": 200}
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search_application_docs",
+      "description": "Retrieve ranked documentation chunks with source citations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "minLength": 2, "maxLength": 500},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+          "service": {"type": "string", "maxLength": 200}
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
