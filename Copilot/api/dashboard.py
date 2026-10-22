@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from agent import config, cycle, tools
-from agent.memory import build_narrative, split_actions
+from agent.memory import build_narrative, parse_proposed_action, split_actions
 from api.schema import (
     IncidentDetail,
     IncidentEvent,
@@ -23,6 +23,48 @@ from db import incidents
 
 log = logging.getLogger("copilot.dashboard")
 router = APIRouter(prefix="/api", tags=["dashboard"])
+
+
+@router.get("/meta/allowed-actions")
+def get_allowed_actions() -> dict:
+    """Return the list of remediation actions the server accepts for incident feedback."""
+    return {"allowed_actions": list(config.ALLOWED_ACTIONS)}
+
+
+def _llm_suggest_next_action(rca_text: str, failed_actions: List[str], service: str) -> Optional[str]:
+    """Call the LLM synchronously to suggest the next remediation action after failures.
+
+    Uses LiteLLM directly (already a dependency via the agent model stack) so this can be
+    called from a synchronous FastAPI endpoint without spinning up an asyncio event loop.
+    Returns the model-suggested action name, or None on any error.
+    """
+    from agent.llm import get_groq_fallback_model, litellm_kwargs
+    from agent.memory import parse_proposed_action
+    from agent.prompts import build_next_action_prompt
+
+    try:
+        import litellm  # noqa: PLC0415
+
+        prompt = build_next_action_prompt(rca_text, failed_actions, service)
+        kwargs = litellm_kwargs()
+        # Use Groq as the synchronous call target — fast, cheap, and already configured.
+        model = get_groq_fallback_model()
+        api_key = getattr(config, "GROQ_API_KEY", "") or None
+
+        response = litellm.completion(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            api_key=api_key,
+            **{k: v for k, v in kwargs.items() if k not in ("num_retries", "fallbacks")},
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        suggested = parse_proposed_action(reply, None)  # allow any snake_case, not just ALLOWED_ACTIONS
+        if suggested and suggested not in ("none", "noop"):
+            log.info("LLM suggested next action '%s' for service '%s'", suggested, service)
+            return suggested
+    except Exception as exc:
+        log.warning("LLM next-action suggestion failed (%s); no recommendation returned", exc)
+    return None
 
 
 @router.get("/incidents", response_model=List[IncidentSummary])
@@ -310,18 +352,21 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
             failed=failed_actions,
         )
 
-        # Select next alternative action from ALLOWED_ACTIONS
-        failed_set = set(failed_actions)
-        alternatives = [a for a in config.ALLOWED_ACTIONS if a not in failed_set and a != "noop"]
-        next_rec = alternatives[0] if alternatives else "escalate_to_human_sre"
+        # Ask the model to suggest the next action based on the original diagnosis and what has failed
+        next_rec = _llm_suggest_next_action(
+            rca_text=inc.get("rca_text") or "",
+            failed_actions=failed_actions,
+            service=inc.get("service", "unknown"),
+        )
 
         incidents.update_fields(
             incident_id,
             proposed_action=next_rec,
             memory_status=retain_outcome.status,
-            memory_detail=f"Action {action_name} failed. Next recommendation: {next_rec}",
+            memory_detail=f"Action {action_name} failed. Model-suggested next action: {next_rec or 'none'}",
         )
 
+        rec_msg = f"Next proposed recommendation: '{next_rec}'." if next_rec else "No further recommendation available."
         return IncidentFeedbackResponse(
             incident_id=incident_id,
             status=updated_status,
@@ -329,5 +374,5 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
             worked=False,
             memory_retained=(retain_outcome.status == "retained"),
             new_recommendation=next_rec,
-            message=f"Action '{action_name}' recorded as failed. Next proposed recommendation: '{next_rec}'.",
+            message=f"Action '{action_name}' recorded as failed. {rec_msg}",
         )

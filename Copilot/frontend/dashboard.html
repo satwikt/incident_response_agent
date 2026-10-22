@@ -282,7 +282,7 @@
                 </div>
             </div>
 
-            <div id="memory-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div id="memory-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                 <!-- Memory items dynamically injected here -->
             </div>
 
@@ -758,6 +758,26 @@
             });
         }
 
+        function toggleMemoryNarrative(narrativeId, fadeId, btnId) {
+            const el = document.getElementById(narrativeId);
+            const fade = document.getElementById(fadeId);
+            const btn = document.getElementById(btnId);
+            if (!el) return;
+
+            const isCollapsed = el.classList.contains('max-h-28');
+            if (isCollapsed) {
+                el.classList.remove('max-h-28');
+                el.classList.add('max-h-none');
+                if (fade) fade.classList.add('hidden');
+                if (btn) btn.innerHTML = '<span>Show less</span> ▴';
+            } else {
+                el.classList.remove('max-h-none');
+                el.classList.add('max-h-28');
+                if (fade) fade.classList.remove('hidden');
+                if (btn) btn.innerHTML = '<span>Show full narrative</span> ▾';
+            }
+        }
+
         // ── Load Hindsight Memories ──────────────────────────────────────────────
         async function loadMemories() {
             try {
@@ -784,24 +804,47 @@
                 }
                 emptyEl.classList.add('hidden');
 
-                data.memories.forEach(m => {
+                data.memories.forEach((m, idx) => {
                     const card = document.createElement('div');
                     card.className = "bg-surface border border-line rounded-xl p-4 flex flex-col justify-between gap-3";
 
                     const fixBadge = m.fix
-                        ? `<span class="px-2 py-0.5 rounded text-xs font-mono bg-successSoft text-success border border-success/30 font-semibold">Verified Fix: ${m.fix}</span>`
+                        ? `<span class="px-2 py-0.5 rounded text-xs font-mono bg-successSoft text-success border border-success/30 font-semibold">Verified Fix: ${escapeHtml(m.fix)}</span>`
                         : '<span class="px-2 py-0.5 rounded text-xs font-mono bg-surface2 text-dim">No fix tag</span>';
 
                     const failedBadges = (m.failed && m.failed.length > 0)
-                        ? m.failed.map(f => `<span class="px-2 py-0.5 rounded text-xs font-mono bg-dangerSoft text-danger line-through border border-danger/30">${f}</span>`).join(' ')
+                        ? m.failed.map(f => `<span class="px-2 py-0.5 rounded text-xs font-mono bg-dangerSoft text-danger line-through border border-danger/30">${escapeHtml(f)}</span>`).join(' ')
                         : '';
+
+                    const narrativeText = (m.narrative || '').trim();
+                    const isLong = narrativeText.length > 180 || narrativeText.includes('\n');
+                    const narrativeId = `mem-narrative-${idx}`;
+                    const fadeId = `mem-fade-${idx}`;
+                    const btnId = `mem-btn-${idx}`;
+
+                    let narrativeHtml = '';
+                    if (isLong) {
+                        narrativeHtml = `
+                            <div class="flex flex-col gap-1.5 flex-1">
+                                <div id="${narrativeId}" class="relative max-h-28 overflow-hidden transition-all duration-200 cursor-pointer group" onclick="toggleMemoryNarrative('${narrativeId}', '${fadeId}', '${btnId}')" title="Click to expand/collapse">
+                                    <p class="text-xs font-mono text-text leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(narrativeText)}</p>
+                                    <div id="${fadeId}" class="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-surface to-transparent pointer-events-none"></div>
+                                </div>
+                                <button id="${btnId}" type="button" onclick="toggleMemoryNarrative('${narrativeId}', '${fadeId}', '${btnId}')" class="self-start text-[11px] font-mono text-accent hover:underline flex items-center gap-1 mt-0.5 focus:outline-none cursor-pointer">
+                                    <span>Show full narrative</span> ▾
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        narrativeHtml = `<p class="text-xs font-mono text-text leading-relaxed whitespace-pre-wrap break-words flex-1">${escapeHtml(narrativeText)}</p>`;
+                    }
 
                     card.innerHTML = `
                         <div class="flex items-center justify-between border-b border-line pb-2">
-                            <span class="font-mono font-bold text-accent text-xs">${m.incident_id}</span>
-                            <span class="text-xs font-mono text-dim">Source: ${m.source}</span>
+                            <span class="font-mono font-bold text-accent text-xs">${escapeHtml(m.incident_id)}</span>
+                            <span class="text-xs font-mono text-dim">Source: ${escapeHtml(m.source || 'live')}</span>
                         </div>
-                        <p class="text-xs font-mono text-text leading-relaxed whitespace-pre-wrap">${m.narrative}</p>
+                        ${narrativeHtml}
                         <div class="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-line">
                             <div class="flex items-center gap-1.5 flex-wrap">
                                 ${fixBadge}
@@ -845,16 +888,16 @@
                 const actionSelect = document.getElementById('modal-feedback-action');
                 if (actionSelect) {
                     actionSelect.innerHTML = '';
-                    const defaultActions = [
-                        'create_missing_table',
-                        'run_db_migration',
-                        'disable_fault',
-                        'flush_pool',
-                        'restart_worker',
-                        'rollback_config',
-                        'rollback_release',
-                        'enable_fallback',
-                    ];
+                    // Fetch allowed actions dynamically from the server
+                    let allowedActions = [];
+                    try {
+                        const metaRes = await fetch('/api/meta/allowed-actions');
+                        const metaData = await metaRes.json();
+                        allowedActions = metaData.allowed_actions || [];
+                    } catch (_) {
+                        // If the meta endpoint fails, fall back to an empty list
+                        allowedActions = [];
+                    }
                     const proposed = (inc.proposed_action || '').trim().toLowerCase();
                     const hasValidProposed = proposed && proposed !== 'none' && proposed !== 'null';
 
@@ -873,7 +916,7 @@
                         actionSelect.appendChild(opt);
                     }
 
-                    defaultActions.forEach(act => {
+                    allowedActions.forEach(act => {
                         if (act !== proposed) {
                             const opt = document.createElement('option');
                             opt.value = act;

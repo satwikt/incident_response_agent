@@ -7,7 +7,7 @@ services:
     build: ./services
     container_name: astronomy-frontend
     ports:
-      - "8080:8080"
+      - "9922:8080"
     environment:
       CATALOG_SERVICE_URL: http://catalog:5001
       CHECKOUT_SERVICE_URL: http://checkout:5002
@@ -121,7 +121,7 @@ services:
     build: ./Copilot
     container_name: incident-copilot
     ports:
-      - "127.0.0.1:8001:8001"
+      - "9911:8001"
     environment:
       APP_SERVICE_NAME: ${APP_SERVICE_NAME:-checkout}
       INGEST_KEYS: ${INGEST_KEYS:-checkout:key-for-checkout,catalog:key-for-catalog,frontend:key-for-frontend}

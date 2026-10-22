@@ -12,3 +12,4 @@ COPY . /app
 ENV PYTHONPATH=/app
 
 CMD ["uvicorn", "frontend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+

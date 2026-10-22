@@ -61,3 +61,23 @@ def build_verify_prompt(evidence: List[str], current_context: str, matches: List
         "Reason: <one sentence that cites the runtime context>\n"
         f"Proposed action: <one of [{_allowed()}] or none>"
     )
+
+
+def build_next_action_prompt(rca_text: str, failed_actions: List[str], service: str) -> str:
+    """Prompt asking the model to suggest the next remediation action after a previous one failed.
+
+    The model sees the original diagnosis and which actions have already been tried, and must
+    respond with exactly one line naming the next action to attempt.
+    """
+    failed_str = ", ".join(failed_actions) if failed_actions else "none"
+    return (
+        f"An incident on service '{service}' was diagnosed as follows:\n\n"
+        f"{rca_text.strip()}\n\n"
+        f"The following remediation actions were already attempted and did NOT resolve the incident: {failed_str}.\n\n"
+        "Based on the diagnosis above, suggest the single best next remediation action to try. "
+        "Do NOT repeat a failed action. Choose from the available actions, or propose a specific "
+        "snake_case action name if none of the standard ones fit.\n\n"
+        f"Available actions: [{_allowed()}]\n\n"
+        "Respond with exactly one line in this format:\n"
+        "Proposed action: <action_name>"
+    )
