@@ -145,8 +145,26 @@ def build_narrative(incident: dict, actions: List[dict], fix: Optional[str], fai
 
 
 def split_actions(actions: List[dict], allowed: Optional[set] = None) -> tuple[Optional[str], List[str]]:
-    """(fix that worked, actions that did not). The worked fix is the LAST action taken before recovery."""
-    names = [a["action"] for a in actions if not allowed or a["action"] in allowed]
+    """(fix that worked, actions that did not). Prioritizes explicit 'worked: True' from operator feedback,
+    falling back to the last action taken before recovery for unannotated actions."""
+    if not actions:
+        return None, []
+
+    filtered = [a for a in actions if not allowed or a.get("action") in allowed]
+    if not filtered and not allowed:
+        filtered = actions
+
+    # 1. Prioritize explicit operator feedback (worked=True / worked=False)
+    worked_names = [a["action"] for a in filtered if a.get("worked") is True and a.get("action")]
+    failed_names = [a["action"] for a in filtered if a.get("worked") is False and a.get("action")]
+
+    if worked_names:
+        fix = worked_names[-1]
+        failed = [f for f in failed_names if f != fix]
+        return fix, failed
+
+    # 2. Fallback for unannotated actions (e.g. raw ops journal): the last action is the tentative fix
+    names = [a["action"] for a in filtered if a.get("action")]
     if not names:
         return None, []
     fix = names[-1]

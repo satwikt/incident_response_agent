@@ -161,7 +161,7 @@ services:
       AGENT_RATE_LIMIT_WAIT_S: ${AGENT_RATE_LIMIT_WAIT_S:-45}
       BREAKER_FAILURES: ${BREAKER_FAILURES:-3}
       BREAKER_PAUSE_S: ${BREAKER_PAUSE_S:-300}
-      ALLOWED_ACTIONS: ${ALLOWED_ACTIONS:-flush_pool,restart_worker,rollback_config,rollback_release,enable_fallback}
+      ALLOWED_ACTIONS: ${ALLOWED_ACTIONS:-flush_pool,restart_worker,rollback_config,rollback_release,enable_fallback,create_missing_table,run_db_migration,apply_schema_migration,disable_fault,hotfix_query,patch_code}
     volumes:
       - copilot-data:/app/data
     depends_on:

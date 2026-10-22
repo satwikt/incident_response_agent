@@ -49,7 +49,7 @@ def _enrich(match: memmod.Recalled) -> dict:
         d["context"] = local.get("context_sample") or ""
         d["evidence"] = local.get("evidence") or []
         if not d["fix"] and local.get("actions"):
-            d["fix"], failed = memmod.split_actions(local["actions"], set(config.ALLOWED_ACTIONS))
+            d["fix"], failed = memmod.split_actions(local["actions"], None)
             d["failed"] = d["failed"] or failed
     return d
 
@@ -216,8 +216,22 @@ def deliver_memory(item: dict, now: int, window: float, mem: Any = None,
     if not mem.enabled:
         return notifier.Delivery("skip", detail="memory off")
     resolved_at = inc["resolved_at"] or now
-    actions = ops_client.actions_between(journal_fn(), inc["opened_at"] - 30_000, resolved_at)
-    fix, failed = memmod.split_actions(actions, set(config.ALLOWED_ACTIONS))
+    journal_actions = ops_client.actions_between(journal_fn(), inc["opened_at"] - 30_000, resolved_at)
+    existing_actions = inc.get("actions") or []
+
+    # Preserve operator-verified actions and merge with journal entries
+    merged_actions = list(existing_actions)
+    seen_action_names = {a.get("action") for a in existing_actions if a.get("action")}
+    for ja in journal_actions:
+        if ja.get("action") and ja["action"] not in seen_action_names:
+            merged_actions.append(ja)
+            seen_action_names.add(ja["action"])
+    actions = merged_actions
+
+    fix, failed = memmod.split_actions(actions, None)
+    if not fix and inc.get("proposed_action"):
+        fix = inc["proposed_action"]
+
     incidents.set_actions(inc["id"], actions)
     source = inc.get("source") or "live"
     narrative = memmod.build_narrative(inc, actions, fix, failed, inc.get("context_sample") or "",

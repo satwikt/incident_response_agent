@@ -28,7 +28,12 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 @router.get("/meta/allowed-actions")
 def get_allowed_actions() -> dict:
     """Return the list of remediation actions the server accepts for incident feedback."""
-    return {"allowed_actions": list(config.ALLOWED_ACTIONS)}
+    system_extended_actions = {
+        "create_missing_table", "run_db_migration", "apply_schema_migration",
+        "disable_fault", "hotfix_query", "patch_code", "flush_pool",
+        "restart_worker", "rollback_config", "rollback_release", "enable_fallback",
+    }
+    return {"allowed_actions": sorted(list(set(config.ALLOWED_ACTIONS) | system_extended_actions))}
 
 
 def _llm_suggest_next_action(rca_text: str, failed_actions: List[str], service: str) -> Optional[str]:
@@ -159,13 +164,22 @@ def get_past_incident_memories() -> PastIncidentsMemoryResponse:
                 exclude_id=None,
             )
             for m in getattr(recall_res, "matches", []):
+                fix = m.fix
+                failed = m.failed or []
+                local = incidents.get(m.incident_id)
+                if not fix and local:
+                    local_fix, local_failed = split_actions(local.get("actions") or [], None)
+                    fix = local_fix or local.get("proposed_action")
+                    if not failed and local_failed:
+                        failed = local_failed
+
                 memories.append(
                     MemoryItem(
                         incident_id=m.incident_id,
                         narrative=m.text,
                         score=m.score,
-                        fix=m.fix,
-                        failed=m.failed or [],
+                        fix=fix,
+                        failed=failed,
                         source=m.source,
                         tags=m.tags or [],
                     )
@@ -180,7 +194,10 @@ def get_past_incident_memories() -> PastIncidentsMemoryResponse:
         inc_id = inc["id"]
         if inc_id in seen_ids:
             continue
-        fix, failed = split_actions(inc.get("actions") or [], set(config.ALLOWED_ACTIONS))
+        fix, failed = split_actions(inc.get("actions") or [], None)
+        if not fix and inc.get("proposed_action"):
+            fix = inc["proposed_action"]
+
         narrative_parts = [
             f"Incident {inc_id} ({inc.get('service', 'unknown')})",
             f"Evidence: {'; '.join(inc.get('evidence') or [])}",
@@ -254,10 +271,20 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
     if not action_name or not re.match(r"^[a-zA-Z0-9_\-\.]+$", action_name):
         raise HTTPException(status_code=400, detail=f"Invalid action '{action_name}'. Must be a valid action identifier.")
 
-    if action_name not in config.ALLOWED_ACTIONS:
+    proposed_action = (inc.get("proposed_action") or "").strip().lower()
+    system_extended_actions = {
+        "create_missing_table", "run_db_migration", "apply_schema_migration",
+        "disable_fault", "hotfix_query", "patch_code", "flush_pool",
+        "restart_worker", "rollback_config", "rollback_release", "enable_fallback",
+    }
+    all_allowed = set(config.ALLOWED_ACTIONS) | system_extended_actions
+    if proposed_action:
+        all_allowed.add(proposed_action)
+
+    if action_name not in all_allowed:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid action '{action_name}'. Must be one of: {list(config.ALLOWED_ACTIONS)}"
+            detail=f"Invalid action '{action_name}'. Must be one of: {sorted(list(all_allowed))}"
         )
 
     now_ms = int(time.time() * 1000)
@@ -311,6 +338,7 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
         )
         incidents.update_fields(
             incident_id,
+            proposed_action=action_name,
             memory_status=retain_outcome.status,
             memory_op=retain_outcome.operation_id,
             memory_detail=retain_outcome.detail or "Verified by operator",
@@ -358,6 +386,11 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
             failed_actions=failed_actions,
             service=inc.get("service", "unknown"),
         )
+        if not next_rec:
+            # Fallback if LLM is unavailable or offline
+            failed_set = set(failed_actions)
+            alternatives = [a for a in config.ALLOWED_ACTIONS if a not in failed_set and a != "noop"]
+            next_rec = alternatives[0] if alternatives else "escalate_to_human_sre"
 
         incidents.update_fields(
             incident_id,

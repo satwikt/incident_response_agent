@@ -925,14 +925,18 @@
                         }
                     });
 
-                    actionSelect.disabled = (inc.status === 'RESOLVED');
+                    actionSelect.disabled = false;
                 }
-                if (inc.status === 'RESOLVED') {
+
+                const hasVerifiedFix = (inc.actions || []).some(a => a.worked === true);
+                if (inc.status === 'RESOLVED' && hasVerifiedFix) {
+                    if (actionSelect) actionSelect.disabled = true;
                     fbBtns.classList.add('hidden');
                     fbMsg.classList.remove('hidden');
                     fbMsg.className = 'text-xs font-mono p-2.5 rounded border bg-successSoft text-success border-success/30';
-                    fbMsg.textContent = 'Incident is resolved. Fix outcome has been recorded in Hindsight.';
+                    fbMsg.textContent = 'Incident is resolved with verified fix recorded in Hindsight.';
                 } else {
+                    if (actionSelect) actionSelect.disabled = false;
                     fbBtns.classList.remove('hidden');
                     fbMsg.classList.add('hidden');
                     fbMsg.textContent = '';
