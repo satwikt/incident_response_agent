@@ -64,6 +64,13 @@ PRESETS: dict[str, QueryPreset] = {
             "Product catalog HTTP p95 latency in seconds",
         ),
         QueryPreset(
+            "checkout-request-logs",
+            "loki",
+            '{service_name="checkout"} |= " -> "',
+            "checkout",
+            "Every checkout request log line (route, status, duration), healthy and failing",
+        ),
+        QueryPreset(
             "checkout-error-logs",
             "loki",
             '{service_name="checkout"} |= "error"',

@@ -123,6 +123,26 @@ class LokiTests(unittest.TestCase):
         self.assertIn("trace_id=abc123", event["message"])
         self.assertIn("span_id=def456", event["message"])
 
+    def test_request_log_line_carries_route_status_and_duration(self):
+        line = '{"level":"ERROR","message":"POST /checkout -> 500 (10.9ms)","exception":"Boom"}'
+        evidence = loki_evidence(LogEntry(1700000000000000000, line, {"service_name": "checkout"}))
+        self.assertEqual(evidence.route, "POST /checkout")
+        self.assertEqual(evidence.status, 500)
+        self.assertAlmostEqual(evidence.duration_ms, 10.9)
+        self.assertEqual(evidence.exception, "Boom")
+        event = to_event(evidence)
+        self.assertEqual((event["route"], event["status"]), ("POST /checkout", 500))
+
+    def test_healthy_request_line_has_status_200(self):
+        line = '{"level":"INFO","message":"GET /products -> 200 (3.0ms)"}'
+        evidence = loki_evidence(LogEntry(1700000000000000000, line, {"service_name": "catalog"}))
+        self.assertEqual((evidence.route, evidence.status), ("GET /products", 200))
+
+    def test_non_request_lines_have_no_route_or_status(self):
+        for line in ("plain text", '{"message":"Checkout payment_failure fault active"}', "[1,2]"):
+            evidence = loki_evidence(LogEntry(1700000000000000000, line, {"service_name": "checkout"}))
+            self.assertEqual((evidence.route, evidence.status, evidence.duration_ms), (None, None, None))
+
     def test_invalid_level_falls_back_to_info(self):
         entry = LogEntry(1700000000000000000, "plain text line", {"service_name": "ad"})
         self.assertEqual(loki_evidence(entry).level, "INFO")

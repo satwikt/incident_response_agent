@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
@@ -12,6 +13,9 @@ from .events import Evidence
 
 SOURCE = "loki"
 MESSAGE_LIMIT = 2000
+
+# The Astronomy Shop services log every request as `METHOD /path -> STATUS (12.3ms)` inside a JSON line.
+_REQUEST_LINE = re.compile(r"^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\S+)\s+->\s+(\d{3})\s+\(([\d.]+)ms\)")
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,29 @@ def _line_level(line: str) -> str:
     return "INFO"
 
 
+def _request_fields(line: str) -> tuple[Optional[str], Optional[int], Optional[float], Optional[str]]:
+    """(route, status, duration_ms, exception) of a request log line; all None for any other line.
+
+    Without these fields the Copilot cannot count the request, so its error-rate and latency tools see no traffic.
+    """
+    try:
+        payload = json.loads(line)
+    except (TypeError, ValueError):
+        return None, None, None, None
+    if not isinstance(payload, Mapping):
+        return None, None, None, None
+    match = _REQUEST_LINE.match(str(payload.get("message") or ""))
+    if not match:
+        return None, None, None, None
+    exception = payload.get("exception")
+    return (
+        f"{match.group(1)} {match.group(2)}",
+        int(match.group(3)),
+        float(match.group(4)),
+        str(exception) if exception else None,
+    )
+
+
 def to_evidence(
     entry: LogEntry,
     *,
@@ -88,10 +115,15 @@ def to_evidence(
     """Map one log record to evidence, truncating oversized messages."""
     labels = entry.labels
     message = entry.line if len(entry.line) <= MESSAGE_LIMIT else entry.line[:MESSAGE_LIMIT]
+    route, status, duration_ms, exception = _request_fields(entry.line)
     return Evidence(
         service=pick_service(labels, service),
         level=normalize_level(level if level is not None else _line_level(entry.line)),
         message=message,
+        route=route,
+        status=status,
+        duration_ms=duration_ms,
+        exception=exception,
         trace_id=labels.get("trace_id") or labels.get("traceID") or labels.get("trace.id"),
         span_id=labels.get("span_id") or labels.get("spanID") or labels.get("span.id"),
         timestamp=entry.timestamp_ns / 1_000_000_000,
