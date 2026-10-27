@@ -26,3 +26,6 @@ Claude outputs/
 # meeting notes and transcripts (contain names and internal discussion)
 *Transcript*.txt
 *transcript*.txt
+
+# private working files (reports, drafts, plans); never committed
+private/
