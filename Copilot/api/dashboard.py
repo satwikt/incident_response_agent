@@ -134,6 +134,9 @@ def get_incidents(
             actions=r.get("actions") or [],
             recalled=r.get("recalled") or [],
             version=r.get("version", 1),
+            diagnosis_mode=r.get("diagnosis_mode"),
+            llm_calls=r.get("llm_calls"),
+            llm_tokens=r.get("llm_tokens"),
         )
         for r in rows
     ]
@@ -177,6 +180,9 @@ def get_incident_detail(incident_id: str) -> IncidentDetail:
         actions=inc.get("actions") or [],
         recalled=inc.get("recalled") or [],
         version=inc.get("version", 1),
+        diagnosis_mode=inc.get("diagnosis_mode"),
+        llm_calls=inc.get("llm_calls"),
+        llm_tokens=inc.get("llm_tokens"),
         fingerprints=inc.get("fingerprints") or [],
         context_sample=inc.get("context_sample"),
         memory_status=inc.get("memory_status"),

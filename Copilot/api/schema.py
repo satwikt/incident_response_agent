@@ -39,6 +39,8 @@ class AskChatResponse(BaseModel):
     incident_id: Optional[str] = None
     tier: Optional[str] = None
     model: Optional[str] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
 
 
 class RenameChatRequest(BaseModel):
@@ -77,6 +79,9 @@ class IncidentSummary(BaseModel):
     actions: List[Dict[str, Any]] = []
     recalled: List[Dict[str, Any]] = []
     version: int = 1
+    diagnosis_mode: Optional[str] = None      # full | verify (how the automatic diagnosis was produced)
+    llm_calls: Optional[int] = None           # cost of the automatic diagnosis
+    llm_tokens: Optional[int] = None
 
 
 class IncidentDetail(IncidentSummary):

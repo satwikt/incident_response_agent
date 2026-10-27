@@ -456,9 +456,10 @@ async def ask_chat(id: int, request: AskChatRequest):
     session_id = f"chat-{id}"
     agent_reply = ""
     llm_calls = 0
+    prompt_tokens = completion_tokens = 0
 
     async def _drive() -> None:
-        nonlocal agent_reply, llm_calls
+        nonlocal agent_reply, llm_calls, prompt_tokens, completion_tokens
         async for event in active_runner.run_async(
             user_id=USER_ID,
             session_id=session_id,
@@ -466,6 +467,10 @@ async def ask_chat(id: int, request: AskChatRequest):
         ):
             if getattr(event, "content", None) and getattr(event.content, "role", None) == "model" and not getattr(event, "partial", False):
                 llm_calls += 1
+            usage = getattr(event, "usage_metadata", None)
+            if usage and not getattr(event, "partial", False):
+                prompt_tokens += getattr(usage, "prompt_token_count", None) or 0
+                completion_tokens += getattr(usage, "candidates_token_count", None) or 0
 
             if (
                 event.is_final_response()
@@ -487,6 +492,8 @@ async def ask_chat(id: int, request: AskChatRequest):
     except Exception as exc:
         agent_reply = user_safe_error(exc)
 
+    log.info("Chat %s done: agent=%s tier=%s llm_calls=%d prompt_tokens=%d completion_tokens=%d",
+             id, agent_name, tier, llm_calls, prompt_tokens, completion_tokens)
     agent_reply = clean_agent_output(agent_reply)
     if not agent_reply.strip():
         agent_reply = "Agent produced no output."
@@ -511,6 +518,8 @@ async def ask_chat(id: int, request: AskChatRequest):
         "incident_id": registered_inc_id,
         "tier": tier,
         "model": _model_for_tier(tier) if tier else None,
+        "prompt_tokens": prompt_tokens or None,
+        "completion_tokens": completion_tokens or None,
     }
 
 

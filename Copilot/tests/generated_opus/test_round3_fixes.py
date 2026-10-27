@@ -118,3 +118,41 @@ def test_query_prompt_caps_error_lines_and_dedupes_companion_lines():
 def test_query_prompt_does_not_infer_another_services_health():
     from agent.query_agent import QUERY_SYSTEM_INSTRUCTION as p
     assert "No direct health data is available" in p and "reports only the monitored service" in p
+
+
+# ── benchmark inputs: chat token usage and the automatic diagnosis cost on the incident API ───────
+
+def test_chat_reply_reports_token_usage_summed_over_model_calls(chat_client, runners):
+    from tests.generated_opus.conftest import make_event
+    from tests.generated_opus.test_chat_router_reactive import RCA_REPLY, ask, new_chat
+    from types import SimpleNamespace as NS
+    rca, _ = runners
+    first, last = make_event("thinking", final=False), make_event(RCA_REPLY)
+    first.usage_metadata = NS(prompt_token_count=1000, candidates_token_count=40)
+    last.usage_metadata = NS(prompt_token_count=1500, candidates_token_count=300)
+    rca.events = [first, last]
+    data = ask(chat_client, new_chat(chat_client), "why is checkout failing?").json()
+    assert data["prompt_tokens"] == 2500 and data["completion_tokens"] == 340 and data["llm_calls"] == 2
+
+
+def test_chat_reply_without_usage_metadata_has_null_tokens(chat_client, runners):
+    from tests.generated_opus.conftest import make_event
+    from tests.generated_opus.test_chat_router_reactive import RCA_REPLY, ask, new_chat
+    rca, _ = runners
+    rca.events = [make_event(RCA_REPLY)]
+    data = ask(chat_client, new_chat(chat_client), "why is checkout failing?").json()
+    assert data["prompt_tokens"] is None and data["completion_tokens"] is None
+
+
+def test_incident_api_exposes_the_automatic_diagnosis_cost():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.dashboard import router as dash
+    inc = run([err(100)], T0)[0].incident
+    incidents.set_rca(inc["id"], "Symptom ...", "ok", llm_calls=4, llm_tokens=9000)
+    incidents.update_fields(inc["id"], diagnosis_mode="full")
+    app = FastAPI()
+    app.include_router(dash)
+    c = TestClient(app)
+    for body in (c.get(f"/api/incidents/{inc['id']}").json(), c.get("/api/incidents").json()[0]):
+        assert (body["diagnosis_mode"], body["llm_calls"], body["llm_tokens"]) == ("full", 4, 9000)
