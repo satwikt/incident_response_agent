@@ -14,6 +14,16 @@ from agent.llm import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_provider_keys(monkeypatch):
+    """Each test starts with no provider configured, whatever the developer's environment holds."""
+    for name in ("NEBIUS_API_KEY", "NVIDIA_API_KEY", "GROQ_API_KEY"):
+        monkeypatch.setattr(config, name, "")
+    monkeypatch.setattr(config, "INFERENCE_PROVIDER", "nebius")
+    for name in ("NEBIUS_NANO_MODEL", "NEBIUS_SUPER_MODEL", "NEBIUS_ULTRA_MODEL"):
+        monkeypatch.setattr(config, name, "")
+
+
 def test_nemotron_tier_model_names(monkeypatch):
     monkeypatch.setattr(config, "NEMOTRON_NANO_MODEL", "nvidia/nemotron-3-nano-30b-a3b")
     monkeypatch.setattr(config, "NEMOTRON_SUPER_MODEL", "nvidia/nemotron-3-super-120b-a12b")
@@ -146,3 +156,97 @@ async def test_provider_safe_litellm_failover():
         results.append(resp)
 
     assert results == ["fallback-success-response"]
+
+
+# ── provider selection and fallback chain (Nebius Token Factory / NVIDIA NIM / Groq) ─────────────
+
+class _Rec:
+    """Stands in for ProviderSafeLiteLlm and records how each link of the chain was built."""
+    def __init__(self, model, fallback_model=None, **kwargs):
+        self.model, self.fallback_model, self.kwargs = model, fallback_model, kwargs
+
+
+def _chain(model):
+    out = []
+    while model is not None:
+        out.append(model)
+        model = model.fallback_model
+    return out
+
+
+@pytest.fixture
+def rec(monkeypatch):
+    monkeypatch.setattr("agent.llm._provider_safe_litellm_class", lambda: _Rec)
+    monkeypatch.setattr(config, "NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1")
+    monkeypatch.setattr(config, "NEBIUS_NANO_MODEL", "nvidia/nano-on-nebius")
+    monkeypatch.setattr(config, "NEBIUS_SUPER_MODEL", "nvidia/super-on-nebius")
+    monkeypatch.setattr(config, "NEBIUS_ULTRA_MODEL", "nvidia/ultra-on-nebius")
+    monkeypatch.setattr(config, "NEMOTRON_SUPER_MODEL", "nvidia/super-on-nim")
+    monkeypatch.setattr(config, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    return _Rec
+
+
+def test_only_nebius_key_builds_a_single_token_factory_link(monkeypatch, rec):
+    monkeypatch.setattr(config, "NEBIUS_API_KEY", "nb-test-key")
+    head = build_nemotron_model("ultra")
+    assert _chain(head) == [head]                         # no NVIDIA or Groq link without their keys
+    assert head.model == "openai/nvidia/ultra-on-nebius"
+    assert head.kwargs["api_base"] == "https://api.tokenfactory.nebius.com/v1"
+    assert head.kwargs["api_key"] == "nb-test-key"
+    assert head.kwargs["drop_params"] is True
+
+
+def test_each_tier_uses_its_own_nebius_model(monkeypatch, rec):
+    monkeypatch.setattr(config, "NEBIUS_API_KEY", "nb-test-key")
+    assert build_nemotron_model("nano").model == "openai/nvidia/nano-on-nebius"
+    assert build_nemotron_model("super").model == "openai/nvidia/super-on-nebius"
+    assert build_nemotron_model("ultra").model == "openai/nvidia/ultra-on-nebius"
+    assert get_nemotron_model_name("nano") == "nvidia/nano-on-nebius"
+
+
+def test_fallback_order_is_nebius_then_nvidia_then_groq(monkeypatch, rec):
+    monkeypatch.setattr(config, "NEBIUS_API_KEY", "nb-test-key")
+    monkeypatch.setattr(config, "NVIDIA_API_KEY", "nvapi-test")
+    monkeypatch.setattr(config, "GROQ_API_KEY", "gsk-test")
+    monkeypatch.setattr(config, "GROQ_MODEL", "groq/llama-3.3-70b-versatile")
+    models = [m.model for m in _chain(build_nemotron_model("super"))]
+    assert models == ["openai/nvidia/super-on-nebius", "openai/nvidia/super-on-nim", "groq/llama-3.3-70b-versatile"]
+    head = build_nemotron_model("super")
+    assert head.kwargs["api_base"] == "https://api.tokenfactory.nebius.com/v1"
+    assert head.fallback_model.kwargs["api_base"] == "https://integrate.api.nvidia.com/v1"
+
+
+def test_inference_provider_nvidia_puts_nim_first(monkeypatch, rec):
+    monkeypatch.setattr(config, "INFERENCE_PROVIDER", "nvidia")
+    monkeypatch.setattr(config, "NEBIUS_API_KEY", "nb-test-key")
+    monkeypatch.setattr(config, "NVIDIA_API_KEY", "nvapi-test")
+    assert [m.model for m in _chain(build_nemotron_model("super"))] == [
+        "openai/nvidia/super-on-nim", "openai/nvidia/super-on-nebius"]
+    assert get_nemotron_model_name("super") == "nvidia/super-on-nim"
+
+
+def test_nebius_selected_but_key_missing_falls_back_to_nvidia(monkeypatch, rec):
+    monkeypatch.setattr(config, "NVIDIA_API_KEY", "nvapi-test")
+    head = build_nemotron_model("super")
+    assert head.model == "openai/nvidia/super-on-nim" and head.kwargs["api_key"] == "nvapi-test"
+
+
+def test_tier_without_a_nebius_model_skips_nebius_for_that_tier(monkeypatch, rec):
+    monkeypatch.setattr(config, "NEBIUS_API_KEY", "nb-test-key")
+    monkeypatch.setattr(config, "NEBIUS_NANO_MODEL", "")
+    monkeypatch.setattr(config, "NVIDIA_API_KEY", "nvapi-test")
+    monkeypatch.setattr(config, "NEMOTRON_NANO_MODEL", "nvidia/nano-on-nim")
+    assert build_nemotron_model("nano").model == "openai/nvidia/nano-on-nim"
+    assert build_nemotron_model("super").model == "openai/nvidia/super-on-nebius"
+
+
+def test_groq_is_a_link_only_when_its_key_is_set(monkeypatch, rec):
+    monkeypatch.setattr(config, "NEBIUS_API_KEY", "nb-test-key")
+    monkeypatch.setattr(config, "GROQ_MODEL", "groq/llama-3.3-70b-versatile")      # a default model alone is not a key
+    assert len(_chain(build_nemotron_model("super"))) == 1
+    monkeypatch.setattr(config, "GROQ_API_KEY", "gsk-test")
+    assert [m.model for m in _chain(build_nemotron_model("super"))][-1] == "groq/llama-3.3-70b-versatile"
+
+
+def test_no_provider_configured_returns_the_bare_model_name(rec):
+    assert build_nemotron_model("super") == "nvidia/super-on-nim"

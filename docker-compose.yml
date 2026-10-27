@@ -125,6 +125,13 @@ services:
     environment:
       APP_SERVICE_NAME: ${APP_SERVICE_NAME:-checkout}
       INGEST_KEYS: ${INGEST_KEYS:-checkout:key-for-checkout,catalog:key-for-catalog,frontend:key-for-frontend}
+      # Inference: Nebius Token Factory is primary when NEBIUS_API_KEY is set; NVIDIA NIM and Groq are optional fallbacks
+      INFERENCE_PROVIDER: ${INFERENCE_PROVIDER:-nebius}
+      NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+      NEBIUS_BASE_URL: ${NEBIUS_BASE_URL:-https://api.tokenfactory.nebius.com/v1}
+      NEBIUS_NANO_MODEL: ${NEBIUS_NANO_MODEL:-}
+      NEBIUS_SUPER_MODEL: ${NEBIUS_SUPER_MODEL:-}
+      NEBIUS_ULTRA_MODEL: ${NEBIUS_ULTRA_MODEL:-}
       # NVIDIA Nemotron model tiers & LiteLLM routing
       AGENT_MODEL: ${AGENT_MODEL:-super}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}

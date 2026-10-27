@@ -99,6 +99,18 @@ AGENT_RATE_LIMIT_WAIT_S: float = _float("AGENT_RATE_LIMIT_WAIT_S", 45.0)
 BREAKER_FAILURES: int = _int("BREAKER_FAILURES", 3)          # consecutive failures that open the circuit breaker
 BREAKER_PAUSE_S: float = _float("BREAKER_PAUSE_S", 300.0)    # how long the breaker stays open
 
+# ── Inference provider ────────────────────────────────────────────────────────
+# Primary provider for the Nemotron tiers: "nebius" (Nebius Token Factory, OpenAI-compatible) or "nvidia" (NVIDIA NIM).
+# A provider without its API key is skipped, so the stack runs with only NEBIUS_API_KEY, only NVIDIA_API_KEY, or both;
+# the others (then Groq, if GROQ_API_KEY is set) form the fallback chain in that order.
+INFERENCE_PROVIDER: str = os.getenv("INFERENCE_PROVIDER", "nebius").strip().lower()
+NEBIUS_API_KEY: str = os.getenv("NEBIUS_API_KEY", "").strip()
+NEBIUS_BASE_URL: str = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1").strip().rstrip("/")
+# Token Factory model ids per tier (list them with scripts/list_models.py). A tier without an id is not served by Nebius.
+NEBIUS_NANO_MODEL: str = os.getenv("NEBIUS_NANO_MODEL", "").strip()
+NEBIUS_SUPER_MODEL: str = os.getenv("NEBIUS_SUPER_MODEL", "").strip()
+NEBIUS_ULTRA_MODEL: str = os.getenv("NEBIUS_ULTRA_MODEL", "").strip()
+
 # ── NVIDIA Nemotron Model Tiers ───────────────────────────────────────────────
 NVIDIA_API_KEY: str = os.getenv("NVIDIA_API_KEY", "")
 NVIDIA_BASE_URL: str = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")

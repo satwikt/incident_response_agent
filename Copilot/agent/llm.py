@@ -240,50 +240,79 @@ def build_groq_fallback_model(**extra_kwargs) -> Any:
     return cls(model=groq_model, fallback_model=None, **kwargs)
 
 
-def get_nemotron_model_name(tier: str = "super") -> str:
-    """Return the model identifier configured for the specified Nemotron tier."""
+_PROVIDERS = ("nebius", "nvidia")
+
+
+def _tier_model(tier: str, provider: str) -> str:
+    """The model id configured for a tier on one provider ('' when that provider does not serve the tier)."""
     t = (tier or "super").strip().lower()
-    if t == "nano":
-        return config.NEMOTRON_NANO_MODEL
-    elif t == "ultra":
-        return config.NEMOTRON_ULTRA_MODEL
-    return config.NEMOTRON_SUPER_MODEL
+    if provider == "nebius":
+        return {"nano": config.NEBIUS_NANO_MODEL, "ultra": config.NEBIUS_ULTRA_MODEL}.get(t, config.NEBIUS_SUPER_MODEL)
+    return {"nano": config.NEMOTRON_NANO_MODEL, "ultra": config.NEMOTRON_ULTRA_MODEL}.get(t, config.NEMOTRON_SUPER_MODEL)
+
+
+def _provider_ready(provider: str, tier: str) -> bool:
+    key = config.NEBIUS_API_KEY if provider == "nebius" else config.NVIDIA_API_KEY
+    return bool(key) and bool(_tier_model(tier, provider))
+
+
+def provider_chain(tier: str = "super") -> list[str]:
+    """Providers to try for a tier, in order: INFERENCE_PROVIDER first, then the other, then 'groq'.
+
+    Each link is optional: a provider is included only when its API key is set (and, for Nebius, a model id exists for the
+    tier), so the system runs with just NEBIUS_API_KEY.
+    """
+    first = config.INFERENCE_PROVIDER if config.INFERENCE_PROVIDER in _PROVIDERS else "nebius"
+    order = [first] + [p for p in _PROVIDERS if p != first]
+    chain = [p for p in order if _provider_ready(p, tier)]
+    if getattr(config, "GROQ_API_KEY", ""):
+        chain.append("groq")
+    return chain
+
+
+def get_nemotron_model_name(tier: str = "super") -> str:
+    """Return the model identifier the primary provider uses for the tier (the NVIDIA ids when no provider is ready)."""
+    for provider in provider_chain(tier):
+        if provider in _PROVIDERS:
+            return _tier_model(tier, provider)
+    return _tier_model(tier, "nvidia")
+
+
+def _link_kwargs(provider: str, tier: str) -> tuple[str, dict]:
+    """(LiteLLM model string, connection kwargs) for one provider's tier model."""
+    model_name = _tier_model(tier, provider)
+    if provider == "nebius":
+        conn = {"api_key": config.NEBIUS_API_KEY, "api_base": config.NEBIUS_BASE_URL}
+    else:
+        conn = {"api_key": config.NVIDIA_API_KEY, "api_base": config.NVIDIA_BASE_URL}
+    target = model_name if model_name.startswith(("nvidia_nim/", "openai/")) else f"openai/{model_name}"
+    return target, conn
 
 
 def build_nemotron_model(tier: str = "super", **extra_kwargs) -> Any:
-    """Build an ADK-compatible model instance for a Nemotron tier (nano, super, ultra) via NVIDIA NIM.
-    Falls back to Groq model if configured and NVIDIA NIM fails or is unconfigured.
-    """
-    model_name = get_nemotron_model_name(tier)
-    kwargs = litellm_kwargs()
+    """Build an ADK-compatible model instance for a Nemotron tier (nano, super, ultra).
 
-    # Route through NVIDIA NIM endpoint if API key is provided
-    if config.NVIDIA_API_KEY:
-        kwargs["api_key"] = config.NVIDIA_API_KEY
-        kwargs["api_base"] = config.NVIDIA_BASE_URL
-        if not model_name.startswith("nvidia_nim/") and not model_name.startswith("openai/"):
-            target_model = f"openai/{model_name}"
-        else:
-            target_model = model_name
-    elif getattr(config, "GROQ_API_KEY", ""):
-        log.info("NVIDIA_API_KEY not set. Routing directly to Groq fallback model %s.", get_groq_fallback_model())
-        return build_groq_fallback_model(**extra_kwargs)
-    else:
-        # Fallback to direct name or litellm provider prefix
-        target_model = model_name
+    The instance is the head of a fallback chain (see provider_chain): Nebius Token Factory, then NVIDIA NIM, then Groq,
+    each only when configured. ProviderSafeLiteLlm hands a failed request to the next link, and a link's own fallback
+    continues the chain. LiteLLM's `fallbacks=` kwarg is NOT used: with this entry shape it re-calls the primary model, so
+    the fallback never reached Groq (bug B02).
+    """
+    chain = provider_chain(tier)
+    if not chain:
+        # No provider configured (unit tests, or a placeholder run): keep the bare name so nothing tries to connect.
+        return get_nemotron_model_name(tier)
 
     fallback_inst = None
-    # The Groq fallback is ProviderSafeLiteLlm's own try/except (fallback_model). LiteLLM's `fallbacks=` kwarg is NOT used:
-    # with this entry shape it re-calls the primary model, so the fallback never reached Groq (bug B02).
-    if getattr(config, "GROQ_API_KEY", "") or getattr(config, "GROQ_MODEL", ""):
-        fallback_inst = build_groq_fallback_model(**extra_kwargs)
-
-    kwargs.update(extra_kwargs)
-
-    # In unit tests or environments without Google ADK/LiteLLM, return model name string if not slash-routed
-    if "/" in target_model:
-        return _provider_safe_litellm_class()(model=target_model, fallback_model=fallback_inst, **kwargs)
-    return target_model
+    for provider in reversed(chain):
+        if provider == "groq":
+            fallback_inst = build_groq_fallback_model(**extra_kwargs)
+            continue
+        target, conn = _link_kwargs(provider, tier)
+        kwargs = {**litellm_kwargs(), **conn, **extra_kwargs}
+        log.info("LLM tier=%s provider=%s model=%s base=%s%s", tier, provider, target, conn["api_base"],
+                 f" fallback={getattr(fallback_inst, 'model', None)}" if fallback_inst is not None else "")
+        fallback_inst = _provider_safe_litellm_class()(model=target, fallback_model=fallback_inst, **kwargs)
+    return fallback_inst
 
 
 def build_nano_model(**extra_kwargs) -> Any:
@@ -308,7 +337,7 @@ def build_model(name: str | None = None) -> Any:
     if "/" in raw:
         kwargs = litellm_kwargs()
         fallback_inst = None
-        if (getattr(config, "GROQ_API_KEY", "") or getattr(config, "GROQ_MODEL", "")) and not raw.startswith("groq/"):
+        if getattr(config, "GROQ_API_KEY", "") and not raw.startswith("groq/"):
             fallback_inst = build_groq_fallback_model()
         return _provider_safe_litellm_class()(model=raw, fallback_model=fallback_inst, **kwargs)
     return raw
