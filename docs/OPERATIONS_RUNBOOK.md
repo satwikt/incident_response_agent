@@ -53,10 +53,10 @@ This brings up:
 
 | Service | Container | Host URL | Description |
 | :--- | :--- | :--- | :--- |
-| **Astronomy Shop Store** | `astronomy-frontend` | `http://localhost:8080/` | Live e-commerce shopping web application. |
-| **Runtime Faults Control Deck** | `astronomy-frontend` | `http://localhost:8080/faults` | Interactive fault injection console to trigger real-time anomalies. |
-| **Copilot Incident Dashboard** | `incident-copilot` | `http://localhost:8001/dashboard` | Live incident queue, timeline, memory recall, and fix verification. |
-| **Copilot Chat Assistant** | `incident-copilot` | `http://localhost:8001/` | Multi-turn conversational SRE copilot. |
+| **Astronomy Shop Store** | `astronomy-frontend` | `http://localhost:9922/` | Live e-commerce shopping web application. |
+| **Runtime Faults Control Deck** | `astronomy-frontend` | `http://localhost:9922/faults` | Interactive fault injection console to trigger real-time anomalies. |
+| **Copilot Incident Dashboard** | `incident-copilot` | `http://localhost:9911/dashboard` | Live incident queue, timeline, memory recall, and fix verification. |
+| **Copilot Chat Assistant** | `incident-copilot` | `http://localhost:9911/` | Multi-turn conversational SRE copilot. |
 | **Grafana** | `grafana` | `http://localhost:3001/` | Telemetry dashboards and correlation views (`admin` / `admin`). |
 | **Prometheus** | `prometheus` | `http://localhost:9090/` | Raw metrics PromQL evaluation console. |
 | **Tempo** | `astronomy-tempo` | `http://localhost:3200/` | Distributed tracing search and waterfall spans. |
@@ -70,10 +70,10 @@ This brings up:
 
 ## 3. Injecting Runtime Fault Scenarios
 
-Faults are toggled dynamically from the **Faults Dashboard** at `http://localhost:8080/faults` without requiring service restarts:
+Faults are toggled dynamically from the **Faults Dashboard** at `http://localhost:9922/faults` without requiring service restarts:
 
 ### Scenario A: Payment Failure (Checkout 500 Error Spike)
-1. Navigate to `http://localhost:8080/faults`.
+1. Navigate to `http://localhost:9922/faults`.
 2. Toggle **Payment Failure** to **ON**.
 3. Click **"Trigger Test Order"** or browse the store and check out.
 4. **Observed Behavior:**
@@ -98,7 +98,7 @@ Faults are toggled dynamically from the **Faults Dashboard** at `http://localhos
 
 ## 4. Resolving Incidents & Fix Verification
 
-1. Open the Copilot Dashboard at `http://localhost:8001/dashboard`.
+1. Open the Copilot Dashboard at `http://localhost:9911/dashboard`.
 2. Click on the open incident in the incident table.
 3. Review the root cause diagnosis and proposed action.
 4. After applying the remediation, click:

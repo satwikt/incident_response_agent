@@ -74,10 +74,10 @@ Welcome to the comprehensive documentation for the **AI Incident Response Agent*
 
 | Service / Interface | Host URL | Description |
 | :--- | :--- | :--- |
-| **Astronomy Shop Web Store** | `http://localhost:8080/` | Microservices storefront gateway |
-| **Runtime Faults Control Deck** | `http://localhost:8080/faults` | Interactive fault injection console |
-| **Incident Copilot Chat UI** | `http://localhost:8001/` | Multi-turn conversational operator agent |
-| **Incident Copilot Dashboard** | `http://localhost:8001/dashboard` | Incident timeline & fix verification console |
+| **Astronomy Shop Web Store** | `http://localhost:9922/` | Microservices storefront gateway |
+| **Runtime Faults Control Deck** | `http://localhost:9922/faults` | Interactive fault injection console |
+| **Incident Copilot Chat UI** | `http://localhost:9911/` | Multi-turn conversational operator agent |
+| **Incident Copilot Dashboard** | `http://localhost:9911/dashboard` | Incident timeline & fix verification console |
 | **Grafana Dashboards** | `http://localhost:3001/` | LGTM telemetry dashboards (`admin` / `admin`) |
 | **Prometheus API & UI** | `http://localhost:9090/` | PromQL evaluator and metrics database |
 | **Tempo Traces** | `http://localhost:3200/` | Distributed tracing search (`:4318` OTLP) |

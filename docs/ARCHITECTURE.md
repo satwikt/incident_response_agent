@@ -72,7 +72,7 @@ flowchart LR
 
 ## 4. Runtime Faults Dashboard (`/faults`)
 
-Located at `http://localhost:8080/faults`, this interface enables operators to inject live anomalies and immediately view AI Copilot detection:
+Located at `http://localhost:9922/faults`, this interface enables operators to inject live anomalies and immediately view AI Copilot detection:
 
 - **Payment Failure**: Forces HTTP 500 on checkout to simulate payment gateway timeout.
 - **High Latency Spike**: Injects 2.5s–3.5s delays into requests to simulate network throttling.

@@ -17,14 +17,14 @@ An autonomous, multi-agent AI Site Reliability Engineering (SRE) copilot built f
   * **Catalog & Cart Service** (`astronomy-catalog` on port 5001): Product catalog and cart management backed by PostgreSQL.
   * **Checkout & Order Service** (`astronomy-checkout` on port 5002): Order orchestration, payments, and fault injection engine.
   * **PostgreSQL Database** (`astronomy-db` on port 5432): Product catalog, customer carts, and persistent order store.
-* **Interactive Runtime Faults Dashboard (`http://localhost:8080/faults`)**:
+* **Interactive Runtime Faults Dashboard (`http://localhost:9922/faults`)**:
   * Live control deck with one-click toggles to inject payment failures, high latency, database pool exhaustion, static image delays, and memory leaks.
 * **Full OpenTelemetry & LGTM Observability**:
   * Distributed tracing via Grafana Tempo (`http://localhost:3200`) with W3C `traceparent` propagation across all service hops.
   * Prometheus metrics (`http://localhost:9090`) scraping `/metrics` endpoints for error rates and latency histograms.
   * Structured JSON logging streaming into Grafana Loki (`http://localhost:3100`).
 * **Dark-Mode Operations Dashboard & Fix Verification**:
-  * Live monitoring console at `http://localhost:8001/dashboard` with one-click **"Fix Worked"** and **"Fix Failed"** verification recording outcomes into Hindsight memory.
+  * Live monitoring console at `http://localhost:9911/dashboard` with one-click **"Fix Worked"** and **"Fix Failed"** verification recording outcomes into Hindsight memory.
 
 ---
 
@@ -33,9 +33,9 @@ An autonomous, multi-agent AI Site Reliability Engineering (SRE) copilot built f
 ```mermaid
 flowchart TB
     subgraph ClientLayer["User Interfaces"]
-        StoreUI["Astronomy Shop Storefront\n(http://localhost:8080)"]
-        FaultsUI["Faults Control Deck\n(http://localhost:8080/faults)"]
-        OpsUI["Incident Copilot Dashboard\n(http://localhost:8001/dashboard)"]
+        StoreUI["Astronomy Shop Storefront\n(http://localhost:9922)"]
+        FaultsUI["Faults Control Deck\n(http://localhost:9922/faults)"]
+        OpsUI["Incident Copilot Dashboard\n(http://localhost:9911/dashboard)"]
     end
 
     subgraph ServiceMesh["Astronomy Shop Microservices"]
@@ -111,7 +111,7 @@ The Reactive RCA Agent dynamically dispatches to different Nemotron tiers based 
 
 ## 4. Runtime Faults Dashboard (`/faults`)
 
-The system includes a dedicated runtime fault injection interface at **`http://localhost:8080/faults`**:
+The system includes a dedicated runtime fault injection interface at **`http://localhost:9922/faults`**:
 
 | Fault Name | Target Service | Mechanism & Simulated Cause | Detectable In Telemetry |
 | :--- | :--- | :--- | :--- |
@@ -202,10 +202,10 @@ Once started, the following services and user interfaces are immediately accessi
 
 | Service | Container | Host URL / Port | Internal Port | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| **Astronomy Shop Storefront** | `astronomy-frontend` | [http://localhost:8080](http://localhost:8080) | `8080` | Web store UI and gateway with automated synthetic traffic. |
-| **Runtime Faults Control Deck** | `astronomy-frontend` | [http://localhost:8080/faults](http://localhost:8080/faults) | `8080` | Interactive chaos console to inject runtime anomalies. |
-| **Copilot Incident Dashboard** | `incident-copilot` | [http://localhost:8001/dashboard](http://localhost:8001/dashboard) | `8001` | Live incident queue, timeline, memory recall, and fix verification. |
-| **Copilot Chat Assistant** | `incident-copilot` | [http://localhost:8001](http://localhost:8001) | `8001` | Multi-turn conversational SRE operator assistant. |
+| **Astronomy Shop Storefront** | `astronomy-frontend` | [http://localhost:9922](http://localhost:9922) | `8080` | Web store UI and gateway with automated synthetic traffic. |
+| **Runtime Faults Control Deck** | `astronomy-frontend` | [http://localhost:9922/faults](http://localhost:9922/faults) | `8080` | Interactive chaos console to inject runtime anomalies. |
+| **Copilot Incident Dashboard** | `incident-copilot` | [http://localhost:9911/dashboard](http://localhost:9911/dashboard) | `8001` | Live incident queue, timeline, memory recall, and fix verification. |
+| **Copilot Chat Assistant** | `incident-copilot` | [http://localhost:9911](http://localhost:9911) | `8001` | Multi-turn conversational SRE operator assistant. |
 | **Grafana Dashboards** | `grafana` | [http://localhost:3001](http://localhost:3001) | `3000` | LGTM dashboards and telemetry correlation (Credentials: `admin` / `admin`). |
 | **Prometheus Metrics** | `prometheus` | [http://localhost:9090](http://localhost:9090) | `9090` | Metrics scraper and raw PromQL evaluation UI. |
 | **Tempo Distributed Tracing** | `astronomy-tempo` | [http://localhost:3200](http://localhost:3200) | `3200` | Trace search UI and OTLP HTTP receiver (`:4318`). |

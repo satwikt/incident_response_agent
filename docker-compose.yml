@@ -143,20 +143,24 @@ services:
       WATCHER_INTERVAL_MINUTES: ${WATCHER_INTERVAL_MINUTES:-1}
       ALERT_ERROR_RATE_THRESHOLD: ${ALERT_ERROR_RATE_THRESHOLD:-5}
       ALERT_LATENCY_P95_MS: ${ALERT_LATENCY_P95_MS:-1000}
-      MIN_REQUESTS: ${MIN_REQUESTS:-10}
+      MIN_REQUESTS: ${MIN_REQUESTS:-3}
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       # Hindsight memory
       MEMORY_MODE: ${MEMORY_MODE:-on}
       HINDSIGHT_URL: http://hindsight:8888
       HINDSIGHT_BANK: ${HINDSIGHT_BANK:-incident-response}
       MEMORY_MIN_SCORE: ${MEMORY_MIN_SCORE:-0.05}
+      MEMORY_RETAIN_FAILED_ATTEMPTS: ${MEMORY_RETAIN_FAILED_ATTEMPTS:-on}
       # Token budget & circuit breaker
       AGENT_MAX_RUNS_PER_HOUR: ${AGENT_MAX_RUNS_PER_HOUR:-12}
       AGENT_TIMEOUT_S: ${AGENT_TIMEOUT_S:-120}
       AGENT_MAX_LLM_CALLS: ${AGENT_MAX_LLM_CALLS:-6}
       AGENT_DAILY_TOKEN_BUDGET: ${AGENT_DAILY_TOKEN_BUDGET:-150000}
       AGENT_REASONING_EFFORT: ${AGENT_REASONING_EFFORT:-low}
-      AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS:-4096}
+      AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS:-8192}
+      # One provider call may take 55 s and is retried once (110 s, inside AGENT_TIMEOUT_S), so a stalled NVIDIA call still ends in a clean error or the Groq fallback.
+      AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-55}
+      AGENT_LLM_RETRIES: ${AGENT_LLM_RETRIES:-1}
       AGENT_RATE_LIMIT_RETRIES: ${AGENT_RATE_LIMIT_RETRIES:-3}
       AGENT_RATE_LIMIT_WAIT_S: ${AGENT_RATE_LIMIT_WAIT_S:-45}
       BREAKER_FAILURES: ${BREAKER_FAILURES:-3}
@@ -183,6 +187,8 @@ services:
       HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-}
       HINDSIGHT_API_LLM_GROQ_SERVICE_TIER: ${HINDSIGHT_LLM_GROQ_SERVICE_TIER:-on_demand}
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: ${HINDSIGHT_EMBEDDINGS_PROVIDER:-local}
+      # Groq models cap output at 16384 tokens; Hindsight's default (64000) makes every retain fail with HTTP 400.
+      HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS: ${HINDSIGHT_RETAIN_MAX_COMPLETION_TOKENS:-16384}
     volumes:
       - hindsight-data:/home/hindsight/.pg0
     restart: unless-stopped
@@ -204,6 +210,7 @@ services:
       - "--watch-service=checkout"
       - "--preset=checkout-error-ratio"
       - "--preset=checkout-error-logs"
+      - "--preset=checkout-request-logs"
       - "--tempo-service=checkout"
       - "--prometheus-url=http://prometheus:9090"
       - "--loki-url=http://loki:3100"
