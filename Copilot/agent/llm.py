@@ -25,6 +25,20 @@ _CLASS_CACHE: dict[str, Any] = {}
 
 
 
+_SECRET_PATTERNS = (
+    re.compile(r"\b(?:gsk|nvapi|sk|xai|hf)[-_][A-Za-z0-9*._-]{4,}"),
+    re.compile(r"(?i)\b(?:bearer|api[_-]?key|authorization)\b\s*[:=]?\s*[A-Za-z0-9*._-]{8,}"),
+)
+
+
+def scrub_secrets(text: str) -> str:
+    """Mask API-key-looking tokens (also partially masked ones) before text is logged or shown."""
+    out = text or ""
+    for pat in _SECRET_PATTERNS:
+        out = pat.sub("<redacted>", out)
+    return out
+
+
 def clean_agent_output(text: str) -> str:
     """Sanitize agent output by stripping reasoning blocks, thinking tags, and monologue preambles."""
     if not text:
@@ -37,17 +51,30 @@ def clean_agent_output(text: str) -> str:
     # Strip unclosed thought tags if output was cut off
     cleaned = re.sub(r"<(thought|think|reasoning)>.*", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
 
-    # 2. Fix glued sentences where sentence end is immediately followed by capital letter (e.g. "observed.There" -> "observed.\n\nThere")
-    cleaned = re.sub(r"([a-z0-9\.\)\]])\.([A-Z])", r"\1.\n\n\2", cleaned)
+    # 1b. A diagnosis starts at its "Symptom" heading: anything the model wrote before it is scratch reasoning
+    heading = re.search(r"(?im)^[ \t]*(?:#+\s*)?(?:\*\*)?(?:\d+\.\s*)?symptom\b", cleaned)
+    if heading and heading.start() > 0 and cleaned[:heading.start()].strip():
+        cleaned = cleaned[heading.start():]
+
+    # 2. Fix glued sentences where sentence end is immediately followed by capital letter (e.g. "observed.There" -> "observed.\n\nThere"),
+    #    but never inside dotted identifiers such as psycopg2.errors.UndefinedTable or sqlalchemy.exc.ProgrammingError
+    def _split_glued(m: "re.Match[str]") -> str:
+        before, after = m.group(1), m.group(2)
+        if "." in before or re.search(r"[A-Z]", after[1:]):
+            return m.group(0)
+        return f"{before}.\n\n{after}"
+
+    cleaned = re.sub(r"([A-Za-z0-9_.\)\]]*[a-z0-9\)\]])\.([A-Z][A-Za-z0-9_]*)", _split_glued, cleaned)
 
     # 3. Strip sentences that are tool narration or operational planning
+    # (anchored to the start of a line: "Health checking of the gateway ..." is content, not narration)
     narration_patterns = [
-        r"Let me (also )?(check|query|inspect|run|look|examine)[^\.\n]*[\.\n]?",
-        r"Checking [^\.\n]*[\.\n]?",
-        r"I will (now )?(check|query|inspect|run|look|examine)[^\.\n]*[\.\n]?",
+        r"^[ \t]*Let me (also )?(check|query|inspect|run|look|examine)[^\.\n]*[\.\n]?",
+        r"^[ \t]*Checking [^\.\n]*[\.\n]?",
+        r"^[ \t]*I will (now )?(check|query|inspect|run|look|examine)[^\.\n]*[\.\n]?",
     ]
     for pat in narration_patterns:
-        cleaned = re.sub(pat, "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(pat, "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
 
     # 4. Split into paragraphs and remove monologue / meta-commentary preambles
     monologue_starters = (
@@ -131,7 +158,10 @@ def _provider_safe_litellm_class() -> Any:
                             fallback_name = getattr(self._fallback_model, "model", str(self._fallback_model))
                             log.warning("Primary model '%s' failed (%s). Falling back to Groq model '%s'.",
                                         self.model, exc, fallback_name)
-                            async for response in self._fallback_model.generate_content_async(llm_request, stream=stream):
+                            # ADK prefers llm_request.model over the instance's own model, so without this the Groq
+                            # call would carry the primary's model name (and hit the wrong endpoint with the Groq key).
+                            fallback_request = llm_request.model_copy(update={"model": fallback_name})                                 if hasattr(llm_request, "model_copy") else llm_request
+                            async for response in self._fallback_model.generate_content_async(fallback_request, stream=stream):
                                 yield response
                         else:
                             raise
@@ -169,8 +199,16 @@ def litellm_kwargs() -> dict:
       fraction of the tokens, which matters on per-minute token quotas. ``none`` leaves the provider default.
     * ``max_tokens``: caps each reply (and what the provider reserves against the quota).
     * ``drop_params``: a model that does not support a parameter ignores it instead of failing.
+    * ``timeout``: seconds one provider call may take before it counts as failed (``AGENT_LLM_TIMEOUT_S``, default 45).
     """
     kwargs: dict = {"num_retries": int(os.getenv("AGENT_LLM_RETRIES", "3")), "drop_params": True}
+    # A stalled provider call must fail (and fall back to Groq) well inside AGENT_TIMEOUT_S; LiteLLM's own default is 10 min.
+    try:
+        timeout = float(os.getenv("AGENT_LLM_TIMEOUT_S", "45"))
+    except ValueError:
+        timeout = 45.0
+    if timeout > 0:
+        kwargs["timeout"] = timeout
     effort = (os.getenv("AGENT_REASONING_EFFORT", "low") or "").strip().lower()
     if effort and effort != "none":
         kwargs["reasoning_effort"] = effort
@@ -235,12 +273,9 @@ def build_nemotron_model(tier: str = "super", **extra_kwargs) -> Any:
         target_model = model_name
 
     fallback_inst = None
+    # The Groq fallback is ProviderSafeLiteLlm's own try/except (fallback_model). LiteLLM's `fallbacks=` kwarg is NOT used:
+    # with this entry shape it re-calls the primary model, so the fallback never reached Groq (bug B02).
     if getattr(config, "GROQ_API_KEY", "") or getattr(config, "GROQ_MODEL", ""):
-        groq_model = get_groq_fallback_model()
-        fallback_entry: dict[str, Any] = {"model": groq_model}
-        if getattr(config, "GROQ_API_KEY", ""):
-            fallback_entry["api_key"] = config.GROQ_API_KEY
-        kwargs["fallbacks"] = [fallback_entry]
         fallback_inst = build_groq_fallback_model(**extra_kwargs)
 
     kwargs.update(extra_kwargs)
@@ -274,11 +309,6 @@ def build_model(name: str | None = None) -> Any:
         kwargs = litellm_kwargs()
         fallback_inst = None
         if (getattr(config, "GROQ_API_KEY", "") or getattr(config, "GROQ_MODEL", "")) and not raw.startswith("groq/"):
-            groq_model = get_groq_fallback_model()
-            fallback_entry: dict[str, Any] = {"model": groq_model}
-            if getattr(config, "GROQ_API_KEY", ""):
-                fallback_entry["api_key"] = config.GROQ_API_KEY
-            kwargs["fallbacks"] = [fallback_entry]
             fallback_inst = build_groq_fallback_model()
         return _provider_safe_litellm_class()(model=raw, fallback_model=fallback_inst, **kwargs)
     return raw

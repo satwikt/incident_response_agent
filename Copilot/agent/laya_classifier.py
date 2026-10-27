@@ -32,7 +32,18 @@ _RCA_KEYWORDS = {
     "outage", "incident", "investigate", "resolve", "recommend", "solve",
     "what happened", "what went wrong", "what is wrong", "what's wrong", "troubleshoot",
     "degraded", "down", "issue", "problem", "explain error", "cause", "postmortem",
+    # inflections: whole-word matching would otherwise miss them
+    "crashing", "crashed", "crashes", "downtime", "outages", "broke", "unavailable", "timeouts", "timing out",
 }
+
+# A request that opens with a lookup verb is a telemetry lookup unless it also asks a diagnostic question
+# ("show failed requests" is a lookup, "show me why checkout is down" is not).
+_LOOKUP_START = re.compile(r"^\s*(?:please\s+|can you\s+|could you\s+)?(?:show|get|fetch|list|display|query|search|find|give|print|dump)\b")
+_DIAGNOSTIC_WORDS = (
+    "why", "root cause", "root-cause", "rootcause", "rca", "diagnose", "diagnosis", "fix", "remediate", "remediation",
+    "recommend", "solve", "resolve", "troubleshoot", "investigate", "postmortem", "what happened", "what went wrong",
+    "what is wrong", "what's wrong", "explain error", "cause",
+)
 
 _QUERY_KEYWORDS = {
     "log", "logs", "trace", "traces", "metric", "metrics", "latency", "p95",
@@ -40,6 +51,59 @@ _QUERY_KEYWORDS = {
     "show", "get", "fetch", "list", "query", "check", "display", "search",
     "doc", "docs", "documentation", "events", "requests", "slow",
 }
+
+
+# Runtime-context facts that change on every event or chat and say nothing about the cause.
+_VOLATILE_KEYS = {"source", "trace_id", "span_id", "traceid", "spanid", "ts", "timestamp", "request_id", "chat_session", "id"}
+_KV_PATTERN = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*([:=])\s*([^\s,;|]+)")
+# "key: value" is only read as a runtime fact for these keys (prose like "active: declining" is not one);
+# "key=value" is accepted for any key.
+_COLON_FACT_KEYS = {"release", "version", "config", "config_rev", "revision", "pool", "leaked_mb", "fallback",
+                    "memory", "region", "build", "image", "commit", "flag"}
+_TOOL_PREFIXES = ("get_", "query_", "recall_", "search_")
+_SIGNATURE_PATTERNS = (
+    re.compile(r"\b[A-Za-z_][\w.]*(?:Error|Exception|Timeout|Exhausted)\b"),   # exception types
+    re.compile(r"(?<![\d,.:])\b[45]\d\d\b(?![,.:]?\d)"),                                                 # HTTP status codes
+    re.compile(r"\b(?:GET|POST|PUT|DELETE|PATCH)\s+/[\w/\-{}]*"),                  # routes
+    re.compile(r"\b[a-z]+(?:_[a-z0-9]+)+\b"),                                      # snake_case names (faults, tables)
+)
+
+
+def _context_facts(text: str) -> tuple[dict[str, str], str]:
+    """(key=value runtime facts, remaining free text) of a context string, without volatile ids."""
+    facts: dict[str, str] = {}
+    for m in _KV_PATTERN.finditer(text):
+        key, sep, value = m.group(1).lower(), m.group(2), m.group(3).strip(".,;)`").lower()
+        if key in _VOLATILE_KEYS or (sep == ":" and key not in _COLON_FACT_KEYS):
+            continue
+        facts[key] = value.lstrip("v") if key in ("release", "version") else value
+    attrs = parse_context_attributes(text)
+    if attrs["release"]:
+        facts.setdefault("release", attrs["release"].lower().lstrip("v"))
+    if attrs["config_rev"]:
+        facts.setdefault("config_rev", attrs["config_rev"].lower())
+    rest = re.sub(r"\s+", " ", _KV_PATTERN.sub(" ", text)).strip(" ,;|").lower()
+    return facts, rest
+
+
+def _is_status_code(token: str) -> bool:
+    return token.isdigit() and len(token) == 3
+
+
+def _is_specific_cause(token: str) -> bool:
+    return not _is_status_code(token) and not token.startswith(("get ", "post ", "put ", "delete ", "patch "))
+
+
+def _evidence_signature(evidence: Optional[List[str]]) -> set[str]:
+    """Exception types, status codes, routes and fault/table names mentioned in the evidence (tool names excluded)."""
+    text = " ".join(str(e) for e in (evidence or []))
+    tokens: set[str] = set()
+    for pat in _SIGNATURE_PATTERNS:
+        for m in pat.finditer(text):
+            tok = re.sub(r"\s+", " ", m.group(0)).lower()
+            if not tok.startswith(_TOOL_PREFIXES):
+                tokens.add(tok)
+    return tokens
 
 
 def parse_context_attributes(context_str: str) -> dict[str, Optional[str]]:
@@ -135,40 +199,35 @@ class LayaClassifier:
     ) -> str:
         curr = (current_context or "").strip()
         past = (past_context or "").strip()
-
-        # If both contexts are missing or empty, treat as different context for safety
-        if not curr or not past:
+        has_evidence = bool(current_evidence) and bool(past_evidence)
+        if not curr and not past and not has_evidence:
             return "different_context"
 
-        # If the context strings are identical
-        if curr.lower() == past.lower():
-            return "same_context"
-
-        curr_attrs = parse_context_attributes(curr)
-        past_attrs = parse_context_attributes(past)
-
-        # Check release
-        if curr_attrs["release"] and past_attrs["release"]:
-            if curr_attrs["release"] != past_attrs["release"]:
+        ckv, crest = _context_facts(curr)
+        pkv, prest = _context_facts(past)
+        ctx_same: Optional[bool] = None   # None: no comparable runtime facts (free text, ids only, or nothing)
+        if ckv or pkv:
+            # Every runtime fact counts (release, config_rev, pool, leaked_mb, fallback, ...); a fact known on one side
+            # only is a mismatch, and so is a context known on one side only.
+            if ckv != pkv:
                 return "different_context"
+            ctx_same = True
+        elif crest and crest == prest:
+            ctx_same = True
 
-        # Check config revision
-        if curr_attrs["config_rev"] and past_attrs["config_rev"]:
-            if curr_attrs["config_rev"] != past_attrs["config_rev"]:
-                return "different_context"
-
-        # If release or config revision differs or is present in only one, flag as different
-        if bool(curr_attrs["release"]) != bool(past_attrs["release"]):
-            return "different_context"
-        if bool(curr_attrs["config_rev"]) != bool(past_attrs["config_rev"]):
-            return "different_context"
-
-        # If both had matching explicit attributes, it's the same context
-        if curr_attrs["release"] and past_attrs["release"] and curr_attrs["release"] == past_attrs["release"]:
-            if curr_attrs["config_rev"] == past_attrs["config_rev"]:
-                return "same_context"
-
-        return "same_context"
+        sig_cur = _evidence_signature(current_evidence)
+        sig_past = _evidence_signature(past_evidence)
+        if sig_cur and sig_past:
+            # Two failures on the same route share the route; what tells them apart is the status code and the named
+            # cause (exception type, fault or table name). When both sides state one and they never agree, it is a
+            # different incident (503 pool exhaustion vs 500 payment failure).
+            for kind in (_is_status_code, _is_specific_cause):
+                a = {t for t in sig_cur if kind(t)}
+                b = {t for t in sig_past if kind(t)}
+                if a and b and not (a & b):
+                    return "different_context"
+            return "same_context" if len(sig_cur & sig_past) / len(sig_cur) >= 0.5 else "different_context"
+        return "same_context" if ctx_same else "different_context"
 
     def classify_chat_intent(self, user_message: str) -> str:
         """Classify user chat intent into 'rca' or 'query'.
@@ -200,6 +259,9 @@ class LayaClassifier:
         return self._heuristic_classify_intent(msg)
 
     def _heuristic_classify_intent(self, msg: str) -> str:
+        if _LOOKUP_START.match(msg) and not any(re.search(r"\b" + re.escape(w) + r"\b", msg) for w in _DIAGNOSTIC_WORDS):
+            return "query"
+
         # Check for RCA indicators first
         for kw in _RCA_KEYWORDS:
             if re.search(r"\b" + re.escape(kw) + r"\b", msg):

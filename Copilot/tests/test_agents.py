@@ -138,7 +138,12 @@ def test_chat_routing_rca_intent(test_client):
     async def mock_run_async(*args, **kwargs):
         yield mock_event
 
-    with patch("api.router.runner.run_async", side_effect=mock_run_async):
+    import api.router as router_mod
+
+    # A chat with no precedent is routed to the ultra tier; serve every tier from the stubbed default runner.
+    with patch("api.router.runner.run_async", side_effect=mock_run_async), patch(
+        "api.router._rca_runner_for", return_value=router_mod.runner
+    ):
         ask_resp = test_client.post(
             f"/ask/{chat_id}",
             json={"message": "why is the todo-app crashing? diagnose root cause."},

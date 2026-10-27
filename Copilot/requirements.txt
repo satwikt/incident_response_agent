@@ -5,6 +5,6 @@ httpx
 pydantic
 python-dotenv
 litellm
-hindsight-client
+hindsight-client==1.1.0
 chromadb
 mcp

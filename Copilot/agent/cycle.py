@@ -8,6 +8,7 @@ once the diagnosis (real or templated) is stored.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any, Callable, List, Optional
 
@@ -78,6 +79,7 @@ def incident_config() -> IncidentConfig:
         recurrence_window_ms=int(config.RECURRENCE_WINDOW_HOURS * 3_600_000),
         renotify_ms=int(config.RENOTIFY_MINUTES * 60_000),
         max_open=config.MAX_OPEN_INCIDENTS,
+        resolve_grace_ms=int(config.RESOLVE_GRACE_S * 1000),
     )
 
 
@@ -117,6 +119,21 @@ def _notify(event: str, incident: dict, now: int, suffix: str = "") -> None:
             incidents.mark_notified(incident["id"], now)
 
 
+def _same_failure_mode(match: dict, status: Optional[int]) -> bool:
+    """False when the remembered incident failed with a different HTTP status than the one failing now.
+
+    The same fingerprint and runtime context can hide a different cause (500s from a payment fault, 503s from an
+    exhausted pool), so such a precedent is only a hypothesis for a full diagnosis, not a verified match. Without a
+    recorded status on either side there is nothing to compare, and the match stands.
+    """
+    if not status:
+        return True
+    past = next((e["detail"] for e in reversed(incidents.events(match.get("incident_id") or ""))
+                 if e["kind"] == "context:status"), "")
+    past_codes = re.findall(r"\b[5]\d\d\b", past)
+    return not past_codes or str(status) in past_codes
+
+
 def handle_actions(actions: List[Action], data: dict, submit: Submit, now: int) -> None:
     for a in actions:
         inc = a.incident
@@ -130,6 +147,10 @@ def handle_actions(actions: List[Action], data: dict, submit: Submit, now: int) 
                 log.exception("recall failed")
                 matches, context = [], ""
             exact_fix = [m for m in matches if m.get("exact") and m.get("fix")]
+            status = store.latest_error_status(config.SERVICE_NAME, now - int(max(thresholds.interval_minutes, 1.0) * 3 * 60_000))
+            if status:
+                incidents.record_event(inc["id"], "context:status", "watcher", f"error status {status}", now)
+            exact_fix = [m for m in exact_fix if _same_failure_mode(m, status)]
             if exact_fix:
                 # Memory-first: a known problem with a confirmed fix needs a light verification, not a full diagnosis.
                 kind, prompt = "verify", build_verify_prompt(inc["evidence"], context, exact_fix[:2])

@@ -1,6 +1,7 @@
 """Pydantic schemas for SRE Copilot API."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StringConstraints
+from typing_extensions import Annotated
 from typing import Any, Dict, List, Optional
 
 
@@ -27,7 +28,7 @@ class NewChatResponse(BaseModel):
 
 
 class AskChatRequest(BaseModel):
-    message: str
+    message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)]
 
 
 class AskChatResponse(BaseModel):
@@ -36,10 +37,12 @@ class AskChatResponse(BaseModel):
     intent: Optional[str] = None
     agent: Optional[str] = None
     incident_id: Optional[str] = None
+    tier: Optional[str] = None
+    model: Optional[str] = None
 
 
 class RenameChatRequest(BaseModel):
-    title: str
+    title: str = Field(max_length=200)
 
 
 class SuccessResponse(BaseModel):

@@ -12,6 +12,8 @@ Rules
 * An incident recovers only after ``recovery_windows`` consecutive **healthy** windows. A window counts as healthy only if
   every route the incident touched has enough traffic and is comfortably under its thresholds (hysteresis). A route
   with too little traffic is *unknown*: the streak neither advances nor resets.
+* A breach with no matching fingerprint attaches to an incident the operator opened from the chat (``chat_rca``
+  fingerprint) instead of opening a duplicate.
 * At most ``max_open`` incidents are active per service, so a flood of distinct fingerprints cannot open unlimited ones.
 """
 
@@ -34,6 +36,7 @@ class IncidentConfig:
     recurrence_window_ms: int = 24 * 3_600_000
     renotify_ms: int = 30 * 60_000
     max_open: int = 5
+    resolve_grace_ms: int = 0      # after a resolve, the same breach is not re-opened for this long (see process_cycle)
 
 
 @dataclass
@@ -93,6 +96,8 @@ def process_cycle(service: str, breaches: Sequence[Breach], signature_for: Calla
                     actions.append(Action("reminder", updated))
         else:
             live = [i for i in active if i["status"] != "SUPPRESSED"]
+            chat_owned = next((i for i in live if i["fingerprints"]
+                               and all(f.get("kind") == "chat_rca" for f in i["fingerprints"])), None)
             if len(live) >= cfg.max_open:
                 target = live[0]
                 incidents.touch_breach(target["id"], now, fps, evidence, _severity(breaches))
@@ -103,17 +108,36 @@ def process_cycle(service: str, breaches: Sequence[Breach], signature_for: Calla
                                       f"max_open={cfg.max_open} reached"))
                 log.warning("Incident cap (%d) reached for %s; attached new fingerprints to %s",
                             cfg.max_open, service, target["id"])
+            elif chat_owned is not None:
+                # The operator already opened this incident from the chat (its only fingerprint is the chat's own); the
+                # watcher's breach is the same fault seen by telemetry. Adopt it: no duplicate, and from now on it
+                # recovers automatically like any watcher incident.
+                incidents.touch_breach(chat_owned["id"], now, fps, evidence, _severity(breaches))
+                incidents.record_event(chat_owned["id"], "breach:adopted", "watcher",
+                                       f"watcher breach attached: {evidence[0] if evidence else ''}"[:200], now)
+                matched.add(chat_owned["id"])
             else:
                 prior = incidents.find_recent_resolved(service, fp_ids, now - cfg.recurrence_window_ms)
-                created = incidents.create(service, fps, _severity(breaches), evidence, now,
-                                           recurrence_of=prior["id"] if prior else None)
-                matched.add(created["id"])
-                actions.append(Action("opened", created, f"recurrence of {prior['id']}" if prior else ""))
+                if (prior and prior.get("resolved_by") != "auto"
+                        and now - (prior.get("resolved_at") or 0) < cfg.resolve_grace_ms):
+                    # An operator marked it resolved while the watcher's window still held requests from before the
+                    # fix took effect: that is the tail of the incident just resolved, not a new one. (An automatic
+                    # resolve needs healthy windows first, so it has no tail.) A real recurrence keeps breaching and
+                    # opens on a later cycle once the window has cleared.
+                    log.info("Breach on %s right after %s was resolved: ignored as its tail (grace %ds)",
+                             service, prior["id"], cfg.resolve_grace_ms // 1000)
+                else:
+                    created = incidents.create(service, fps, _severity(breaches), evidence, now,
+                                               recurrence_of=prior["id"] if prior else None)
+                    matched.add(created["id"])
+                    actions.append(Action("opened", created, f"recurrence of {prior['id']}" if prior else ""))
 
     for inc in active:
         if inc["id"] in matched:
             continue
-        statuses = [_route_status(f["route"], healthy, global_traffic_ok) for f in inc["fingerprints"]]
+        # the chat's own fingerprint has no route to judge; once telemetry fingerprints are attached they decide recovery
+        judged = [f for f in inc["fingerprints"] if f.get("kind") != "chat_rca"] or inc["fingerprints"]
+        statuses = [_route_status(f["route"], healthy, global_traffic_ok) for f in judged]
         if any(s is None for s in statuses):
             continue                                   # unknown: hold the streak where it is
         streak = inc["healthy_windows"] + 1

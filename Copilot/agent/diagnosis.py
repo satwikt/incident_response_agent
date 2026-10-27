@@ -116,6 +116,7 @@ class DiagnosisService:
 
     async def _run_with_rate_limit_waits(self, prompt: str, kind: str = "full") -> DiagnosisResult:
         fn = self._verify if kind == "verify" else self._diagnose
+        retried_empty = False
         for attempt in range(self.rate_limit_retries + 1):
             try:
                 raw = await asyncio.wait_for(fn(prompt), timeout=self.timeout_s)
@@ -125,6 +126,11 @@ class DiagnosisService:
                     raise ValueError("empty diagnosis")
                 return result
             except Exception as exc:  # noqa: BLE001
+                if isinstance(exc, ValueError) and str(exc) == "empty diagnosis" and not retried_empty:
+                    # a reasoning model can spend its whole token budget thinking and answer nothing: ask once more
+                    retried_empty = True
+                    log.warning("empty diagnosis; retrying once")
+                    continue
                 if is_rate_limit(exc) and attempt < self.rate_limit_retries:
                     reported = retry_after_seconds(exc)
                     # Use the provider's own delay (plus a margin) when it gives one, never less than 5 s or more than 120 s.

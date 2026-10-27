@@ -10,6 +10,7 @@ RESOLVED is terminal; a recurrence is a NEW incident linked through ``recurrence
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from typing import Any, Dict, List, Optional
 
@@ -181,21 +182,37 @@ def events(incident_id: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def _evidence_key(line: str) -> str:
+    """An evidence line with its numbers blanked, so the same breach seen again compares equal."""
+    return re.sub(r"\d+(?:\.\d+)?", "#", str(line)).strip().lower()
+
+
 def touch_breach(incident_id: str, now: int, fingerprints: List[dict], evidence: List[str],
                  severity: str) -> Dict[str, Any]:
-    """The incident was seen breaching again: merge fingerprints, refresh evidence, reset the healthy streak."""
+    """The incident was seen breaching again: merge fingerprints and evidence, reset the healthy streak.
+
+    Evidence keeps what the incident was opened with. A later cycle's line for the same breach (only its numbers
+    differ, e.g. 100% -> 50% as a fix takes effect) is not stored: it would overwrite the picture the diagnosis and the
+    memory narrative were written from. A breach of a new kind or route is appended.
+    """
     inc = get(incident_id)
     if inc is None:
         raise NotFound(incident_id)
     known = {f["fp"] for f in inc["fingerprints"]}
     merged = inc["fingerprints"] + [f for f in fingerprints if f["fp"] not in known]
+    kept = list(inc["evidence"])
+    seen = {_evidence_key(e) for e in kept}
+    for line in evidence:
+        if _evidence_key(line) not in seen:
+            seen.add(_evidence_key(line))
+            kept.append(line)
     worse = "critical" if "critical" in (severity, inc["severity"]) else severity
     conn = get_db_connection()
     try:
         conn.execute(
             "UPDATE incidents SET last_seen_at = ?, fingerprints_json = ?, evidence_json = ?, severity = ?, "
             "healthy_windows = 0, breach_windows = breach_windows + 1, version = version + 1 WHERE id = ?",
-            (now, json.dumps(merged), json.dumps(evidence), worse, incident_id),
+            (now, json.dumps(merged), json.dumps(kept), worse, incident_id),
         )
         conn.commit()
     finally:

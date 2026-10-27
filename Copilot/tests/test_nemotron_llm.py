@@ -118,9 +118,10 @@ def test_build_nemotron_model_sets_groq_fallback_when_nvidia_key_present(monkeyp
     call_kwargs = mock_litellm_cls.call_args[1]
     assert call_kwargs["model"] == "openai/nvidia/nemotron-3.5-super-vl-120b-a12b"
     assert call_kwargs["api_key"] == "nvapi-testkey-1234"
-    assert "fallbacks" in call_kwargs
-    assert call_kwargs["fallbacks"][0]["model"] == "groq/llama-3.3-70b-versatile"
-    assert call_kwargs["fallbacks"][0]["api_key"] == "gsk-testkey-1234"
+    # B02: LiteLLM's `fallbacks=` kwarg re-called the primary instead of Groq; the explicit fallback_model is used.
+    assert "fallbacks" not in call_kwargs
+    groq_call = [c[1] for c in mock_litellm_cls.call_args_list if c[1]["model"] == "groq/llama-3.3-70b-versatile"]
+    assert groq_call and groq_call[0]["api_key"] == "gsk-testkey-1234"
     assert "fallback_model" in call_kwargs
     assert call_kwargs["fallback_model"] is not None
 

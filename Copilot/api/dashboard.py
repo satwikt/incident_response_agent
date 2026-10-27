@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from agent import config, cycle, tools
-from agent.memory import build_narrative, parse_proposed_action, split_actions
+from agent.memory import OP_DONE, OP_FAILED, RetainOutcome, build_narrative, parse_proposed_action, split_actions
 from api.schema import (
     IncidentDetail,
     IncidentEvent,
@@ -19,6 +19,7 @@ from api.schema import (
     PastIncidentsMemoryResponse,
     TelemetryOverviewResponse,
 )
+from db import events as store
 from db import incidents
 
 log = logging.getLogger("copilot.dashboard")
@@ -72,6 +73,41 @@ def _llm_suggest_next_action(rca_text: str, failed_actions: List[str], service: 
     return None
 
 
+def _reconcile_memory(inc: dict) -> dict:
+    """A queued retain ('retained') becomes 'indexed' or 'failed' once Hindsight reports the operation's outcome.
+
+    The retain call only queues the work; Hindsight extracts facts asynchronously and can fail afterwards, so the status
+    shown to the operator is checked against the operation instead of being assumed.
+    """
+    op = inc.get("memory_op")
+    if inc.get("memory_status") != "retained" or not op:
+        return inc
+    mem = cycle.get_memory()
+    if not getattr(mem, "enabled", False):
+        return inc
+    try:
+        status = (mem.operation_status(op) or "").lower()
+    except Exception as exc:  # noqa: BLE001 - a status check must never break the dossier
+        log.warning("memory operation status check failed (%s)", exc)
+        return inc
+    if status in OP_DONE:
+        incidents.update_fields(inc["id"], memory_status="indexed")
+        return {**inc, "memory_status": "indexed"}
+    if status in OP_FAILED:
+        detail = "Hindsight failed to index this memory (see the hindsight container log)"
+        incidents.update_fields(inc["id"], memory_status="failed", memory_detail=detail)
+        return {**inc, "memory_status": "failed", "memory_detail": detail}
+    return inc
+
+
+def _retain_message(status: str, detail: str = "") -> str:
+    if status == "retained":
+        return "Incident resolved. The verified fix was queued for Hindsight memory; its indexing status is on the incident."
+    if status == "skipped":
+        return "Incident resolved. Memory is off, so the verified fix is recorded in the incident only."
+    return f"Incident resolved, but the fix could not be queued for Hindsight memory ({detail or status})."
+
+
 @router.get("/incidents", response_model=List[IncidentSummary])
 def get_incidents(
     service: Optional[str] = Query(None, description="Filter by service name"),
@@ -109,6 +145,7 @@ def get_incident_detail(incident_id: str) -> IncidentDetail:
     inc = incidents.get(incident_id)
     if not inc:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+    inc = _reconcile_memory(inc)
 
     events_raw = incidents.list_events(incident_id)
     timeline = [
@@ -236,9 +273,14 @@ def get_telemetry_overview(
 ) -> TelemetryOverviewResponse:
     """Return live telemetry snapshot: service health, error rates, latencies, and active incidents."""
     svc = service or config.SERVICE_NAME
-    health = tools.get_service_health()
-    error_rate = tools.get_error_rate(window_minutes)
-    latency = tools.get_latency(window_minutes)
+    if svc == config.SERVICE_NAME:
+        health = tools.get_service_health()
+        error_rate = tools.get_error_rate(window_minutes)
+        latency = tools.get_latency(window_minutes)
+    else:   # the agent tools are bound to the monitored service; any other service is read from the event store directly
+        health = store.health(svc)
+        error_rate = store.error_rate(svc, window_minutes)
+        latency = store.latency(svc, window_minutes)
     active = incidents.list_active(svc)
     all_incidents = incidents.list_all(service=svc, limit=500)
 
@@ -258,6 +300,10 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
     inc = incidents.get(incident_id)
     if not inc:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    if inc["status"] == "RESOLVED" and not request.worked:
+        raise HTTPException(status_code=409, detail=f"Incident {incident_id} is already resolved; a failed-fix report "
+                                                    "would overwrite its verified memory.")
 
     action_name = (request.action or "").strip()
     # Normalize common operator action aliases
@@ -301,7 +347,8 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
 
     mem = cycle.get_memory()
     fix_action = action_name if request.worked else None
-    failed_actions = [a["action"] for a in updated_actions if not a.get("worked")]
+    failed_actions = list(dict.fromkeys(
+        a["action"] for a in updated_actions if a.get("worked") is False and a.get("action") != fix_action))
     context_str = inc.get("context_sample") or ""
 
     if request.worked:
@@ -330,7 +377,7 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
             minutes_to_resolve=min_to_resolve,
         )
         retain_outcome = mem.retain(
-            incident=inc,
+            incident={**inc, "status": "RESOLVED"},
             narrative=narrative,
             actions=updated_actions,
             fix=fix_action,
@@ -351,11 +398,11 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
             worked=True,
             memory_retained=(retain_outcome.status == "retained"),
             new_recommendation=None,
-            message="Incident successfully resolved and verified fix retained in Hindsight memory.",
+            message=_retain_message(retain_outcome.status, retain_outcome.detail),
         )
     else:
         # Failure path: keep incident active, retain failed action tag, and suggest alternative fix
-        if inc["status"] == "OPEN":
+        if inc["status"] in ("OPEN", "ACKED"):
             try:
                 incidents.transition(
                     incident_id=incident_id,
@@ -370,15 +417,20 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
                 updated_status = inc["status"]
         else:
             updated_status = inc["status"]
+            incidents.record_event(incident_id, "action:failed", "operator",
+                                   f"Action failed: {action_name}. Notes: {request.notes or 'None'}", now_ms)
 
         narrative = f"Attempted action '{action_name}' on {inc['service']} failed to resolve incident {incident_id}. Notes: {request.notes or 'None'}"
-        retain_outcome = mem.retain(
-            incident=inc,
-            narrative=narrative,
-            actions=updated_actions,
-            fix=None,
-            failed=failed_actions,
-        )
+        if config.MEMORY_RETAIN_FAILED_ATTEMPTS:
+            retain_outcome = mem.retain(
+                incident=inc,
+                narrative=narrative,
+                actions=updated_actions,
+                fix=None,
+                failed=failed_actions,
+            )
+        else:   # recorded on the incident now, stored in memory with the fix once the incident resolves
+            retain_outcome = RetainOutcome("skipped", detail="failed attempts are stored when the incident resolves")
 
         # Ask the model to suggest the next action based on the original diagnosis and what has failed
         next_rec = _llm_suggest_next_action(
@@ -386,9 +438,12 @@ def submit_incident_feedback(incident_id: str, request: IncidentFeedbackRequest)
             failed_actions=failed_actions,
             service=inc.get("service", "unknown"),
         )
+        failed_set = set(failed_actions)
+        if next_rec and (next_rec in failed_set or next_rec not in all_allowed):
+            log.info("Ignoring model suggestion '%s' (already failed or not an allowed action)", next_rec)
+            next_rec = None
         if not next_rec:
-            # Fallback if LLM is unavailable or offline
-            failed_set = set(failed_actions)
+            # Fallback if the model is unavailable, repeats a failed action, or proposes one outside the allow-list
             alternatives = [a for a in config.ALLOWED_ACTIONS if a not in failed_set and a != "noop"]
             next_rec = alternatives[0] if alternatives else "escalate_to_human_sre"
 

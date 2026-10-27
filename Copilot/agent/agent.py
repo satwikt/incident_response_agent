@@ -72,6 +72,7 @@ RESPONSE FORMAT for diagnostic answers:
    - For configuration changes: propose rollback_config.
    - For code regressions or deployment issues: propose rollback_release.
    - For downstream service outages: propose enable_fallback.
+   - For an injected or toggled fault / feature flag that is switched on (log says "fault active"): propose disable_fault.
    - Or any dynamic snake_case action name suited to the incident.
    End your response with exactly one line:
    Proposed action: <name>

@@ -16,6 +16,7 @@ Everything here fails open: if Hindsight is unreachable, slow or memory is switc
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 import uuid
@@ -24,6 +25,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
 
 log = logging.getLogger("copilot.memory")
+
+# Hindsight operation states (lower-case): a retain is only stored once it reaches one of OP_DONE.
+OP_DONE = ("completed", "succeeded", "success", "done")
+OP_FAILED = ("failed", "error")
 
 _FIX_TAG = "fix:"
 _FAILED_TAG = "failed:"
@@ -163,19 +168,21 @@ def split_actions(actions: List[dict], allowed: Optional[set] = None) -> tuple[O
         failed = [f for f in failed_names if f != fix]
         return fix, failed
 
-    # 2. Fallback for unannotated actions (e.g. raw ops journal): the last action is the tentative fix
-    names = [a["action"] for a in filtered if a.get("action")]
+    # 2. Fallback for UNANNOTATED actions only (e.g. raw ops journal): the last one is the tentative fix.
+    #    An action the operator marked worked=False is never the fix.
+    names = [a["action"] for a in filtered if a.get("action") and a.get("worked") is None]
+    failed = list(dict.fromkeys(failed_names))
     if not names:
-        return None, []
+        return None, failed
     fix = names[-1]
-    failed = []
     for n in names[:-1]:
         if n != fix and n not in failed:
             failed.append(n)
-    return fix, failed
+    return fix, [f for f in failed if f != fix]
 
 
-_PROPOSED = re.compile(r"proposed\s+action\s*:\s*`?([a-z0-9_-]+)`?", re.IGNORECASE)
+# Models often wrap the line in markdown: "**Proposed action:** x", "**Proposed action**: x", "Proposed action: **x**", "`x`".
+_PROPOSED = re.compile(r"proposed\s+action\s*[*_]*\s*:\s*[*_`\s]*([a-z0-9_-]+)", re.IGNORECASE)
 
 
 def parse_proposed_action(text: str, allowed: Optional[set] = None) -> Optional[str]:
@@ -243,17 +250,31 @@ class HindsightMemory:
 
     # -- recall ----------------------------------------------------------------------------
 
+    def _recall_defaults(self) -> dict:
+        """Optional recall arguments the installed client sends as JSON null unless told otherwise.
+
+        hindsight-client >= 1.1 serializes the unset ``prefer_observations`` as ``null`` and the Hindsight server answers
+        HTTP 422 ("Input should be a valid boolean"), which made every recall fail open to "no memory". Passing an explicit
+        boolean works with old and new clients; a client without the argument is left alone.
+        """
+        try:
+            params = inspect.signature(self._c.recall).parameters
+        except (TypeError, ValueError):
+            return {}
+        return {"prefer_observations": False} if "prefer_observations" in params else {}
+
     def recall(self, incident: dict, query: str, exclude_id: Optional[str] = None) -> RecallResult:
         fp_tags = [f"fp:{f['fp']}" for f in incident.get("fingerprints") or []]
         found: Dict[str, Recalled] = {}
         self.ensure_bank()
+        extra = self._recall_defaults()
         try:
             if fp_tags:
                 resp = self._call(self._c.recall, bank_id=self.bank_id, query=query, tags=fp_tags,
-                                  tags_match="any_strict", max_tokens=2000)
+                                  tags_match="any_strict", max_tokens=2000, **extra)
                 self._collect(resp, found, exact=True, exclude_id=exclude_id)
             resp = self._call(self._c.recall, bank_id=self.bank_id, query=query, tags=["kind:incident"],
-                              tags_match="all_strict", max_tokens=2000)
+                              tags_match="all_strict", max_tokens=2000, **extra)
             self._collect(resp, found, exact=False, exclude_id=exclude_id)
         except Exception as exc:  # noqa: BLE001 - fail open
             log.warning("memory recall failed (%s); continuing without memory", type(exc).__name__)
@@ -275,7 +296,7 @@ class HindsightMemory:
             found[doc] = Recalled(
                 incident_id=doc, text=(getattr(item, "text", "") or "")[:400], exact=exact or (prior.exact if prior else False),
                 score=float(final), fix=_tag_value(tags, _FIX_TAG),
-                failed=[t[len(_FAILED_TAG):] for t in tags if t.startswith(_FAILED_TAG)],
+                failed=list(dict.fromkeys(t[len(_FAILED_TAG):] for t in tags if t.startswith(_FAILED_TAG))),
                 source=_tag_value(tags, "source:") or "live", tags=tags)
 
     # -- retain ----------------------------------------------------------------------------
@@ -284,7 +305,9 @@ class HindsightMemory:
                failed: List[str], source: str = "live") -> RetainOutcome:
         self.ensure_bank()
         tags = [f"fp:{f['fp']}" for f in incident.get("fingerprints") or []]
-        tags += [f"svc:{incident['service']}", "kind:incident", "outcome:resolved", f"source:{source}"]
+        # an incident that is still being worked on (operator reported a failed fix) is not a resolved precedent
+        outcome = "active" if incident.get("status") in ("OPEN", "ACKED", "REMEDIATING") else "resolved"
+        tags += [f"svc:{incident['service']}", "kind:incident", f"outcome:{outcome}", f"source:{source}"]
         if fix:
             tags.append(_FIX_TAG + fix)
         tags += [_FAILED_TAG + f for f in failed]

@@ -323,6 +323,18 @@ def sample_error_message(service: str, route: Optional[str], since_ms: int) -> O
     return row["message"] if row else None
 
 
+def latest_error_status(service: str, since_ms: int) -> Optional[int]:
+    """HTTP status of the most recent 5xx event of the service since `since_ms`, if any."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT status FROM events WHERE service = ? AND received_at >= ? AND status >= 500 "
+            "ORDER BY received_at DESC, pk DESC LIMIT 1", (service, since_ms)).fetchone()
+    finally:
+        conn.close()
+    return int(row["status"]) if row else None
+
+
 def top_exception(service: str, route: Optional[str], minutes: float, now: Optional[int] = None) -> Optional[str]:
     """Most frequent exception TYPE (text before the first colon) on a route in the window, if any."""
     conn = get_db_connection()

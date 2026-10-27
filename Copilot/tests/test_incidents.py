@@ -286,3 +286,24 @@ def test_version_increases_on_every_change():
     cycle([err()], T0 + 1)
     incidents.set_rca("INC-0001", "text", "ok")
     assert incidents.get("INC-0001")["version"] > v1 + 1
+
+
+# ── chat-created incidents ───────────────────────────────────────────────────────────────
+
+CHAT_FP = [{"fp": "fp-chat", "kind": "chat_rca", "route": "chat", "sig": "chat_investigation"}]
+
+
+def test_watcher_adopts_an_incident_the_operator_opened_from_the_chat():
+    """The same fault seen by telemetry must not open a second incident next to the chat's one, and the adopted
+    incident then recovers like any other (chat incidents used to stay open forever)."""
+    chat = incidents.create(S, CHAT_FP, "critical", ["Reported in chat: checkout failing"], T0)
+    actions = cycle([err()], T0 + 15_000)
+    assert [a.kind for a in actions] == []                              # no second page, no second incident
+    assert [i["id"] for i in incidents.list_all()] == [chat["id"]]
+    adopted = incidents.get(chat["id"])
+    assert {f["kind"] for f in adopted["fingerprints"]} == {"chat_rca", "error_rate"}
+    assert incidents.list_events(chat["id"])[-1]["kind"] == "breach:adopted"
+    for i in range(3):                                                  # healthy windows -> auto-resolve
+        actions = cycle([], T0 + 30_000 + i * 15_000, healthy={"POST /todos"})
+    assert incidents.get(chat["id"])["status"] == "RESOLVED"
+
