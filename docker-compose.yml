@@ -192,6 +192,8 @@ services:
       HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-groq}
       HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-openai/gpt-oss-20b}
       HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-}
+      # Empty = the provider's own endpoint (Groq). Set it to use any OpenAI-compatible endpoint, e.g. Nebius Token Factory.
+      HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_LLM_BASE_URL:-}
       HINDSIGHT_API_LLM_GROQ_SERVICE_TIER: ${HINDSIGHT_LLM_GROQ_SERVICE_TIER:-on_demand}
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: ${HINDSIGHT_EMBEDDINGS_PROVIDER:-local}
       # Groq models cap output at 16384 tokens; Hindsight's default (64000) makes every retain fail with HTTP 400.
