@@ -39,6 +39,8 @@ except ImportError:
     extract = lambda h: None
     inject = lambda h: None
 
+from fastapi import Depends
+from common.auth import require_chaos_key
 from common.faults import fault_registry
 from common.models import Cart, CheckoutRequest, FaultToggleRequest, Order
 from common.telemetry import setup_telemetry
@@ -221,12 +223,12 @@ async def get_faults():
     return fault_registry.get_all()
 
 
-@app.post("/admin/faults")
+@app.post("/admin/faults", dependencies=[Depends(require_chaos_key)])
 async def set_fault(req: FaultToggleRequest):
     return fault_registry.set_fault(req.fault_type, req.enabled, **req.params)
 
 
-@app.post("/admin/faults/reset")
+@app.post("/admin/faults/reset", dependencies=[Depends(require_chaos_key)])
 async def reset_faults():
     global _HELD_CONNECTIONS
     _HELD_CONNECTIONS.clear()

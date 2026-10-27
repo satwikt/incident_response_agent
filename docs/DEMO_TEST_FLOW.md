@@ -88,6 +88,10 @@ Ask each in a **new chat**; every one must answer in 5-15 s and leave the incide
 
 ## Known limits (not bugs, plan around them)
 
+- **Chaos key.** If `CHAOS_KEY` is set in `.env`, switching faults on or off (faults page, `/api/faults`, `/admin/faults` on
+  checkout and catalog) needs it as the `X-Chaos-Key` header. The faults page asks for it once per browser session. Leave
+  `CHAOS_KEY` empty for an open local setup. `reset_demo.ps1` reads `$env:CHAOS_KEY` or `-ChaosKey`.
+
 - **`MIN_REQUESTS`** (in `.env`) is how many checkout requests the watcher's 1-minute window needs before it will call
   an error rate a breach. The shop's background traffic is only ~4 checkouts/min, so the default of 20 never opens an
   incident on its own; the demo uses `MIN_REQUESTS=3`. Apply a change with `docker compose up -d copilot`.

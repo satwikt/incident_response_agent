@@ -11,7 +11,7 @@
   Usage:  .\scripts\reset_demo.ps1             # fresh take: first fault = ultra tier, repeat = nano
           .\scripts\reset_demo.ps1 -KeepMemory # keep what the copilot has learned, clear incidents and chats
 #>
-param([switch]$KeepMemory, [switch]$KeepTelemetry)
+param([switch]$KeepMemory, [switch]$KeepTelemetry, [string]$ChaosKey = $env:CHAOS_KEY)   # the fault reset needs the key when CHAOS_KEY is set
 
 # Docker writes progress to stderr, which Windows PowerShell 5.1 would turn into errors under "Stop": check exit codes instead.
 $ErrorActionPreference = "Continue"
@@ -25,7 +25,8 @@ function Run([string]$what, [scriptblock]$cmd) {
 $project = (docker compose config --format json 2>$null | ConvertFrom-Json).name
 if (-not $project) { throw "Could not determine the compose project name (is Docker running?)." }
 
-try { Invoke-RestMethod -Method Post -Uri "http://localhost:9922/api/faults/reset" | Out-Null } catch { Write-Host "(faults not reset: frontend not reachable)" }
+$hdr = @{}; if ($ChaosKey) { $hdr["X-Chaos-Key"] = $ChaosKey }
+try { Invoke-RestMethod -Method Post -Uri "http://localhost:9922/api/faults/reset" -Headers $hdr | Out-Null } catch { Write-Host "(faults not reset: frontend unreachable, or it needs the chaos key: pass -ChaosKey or set `$env:CHAOS_KEY)" }
 
 $services = @("copilot", "adapter", "hindsight")
 if (-not $KeepTelemetry) { $services += @("loki", "tempo", "prometheus") }

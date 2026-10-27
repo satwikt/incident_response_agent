@@ -43,6 +43,8 @@ except ImportError:
     extract = lambda h: None
     inject = lambda h: None
 
+from fastapi import Depends
+from common.auth import HEADER as CHAOS_HEADER, chaos_key, require_chaos_key
 from common.faults import fault_registry
 from common.models import AddToCartRequest, CheckoutRequest, FaultToggleRequest
 from common.telemetry import setup_telemetry
@@ -204,12 +206,17 @@ async def serve_image(image_name: str):
 
 # ─── Faults Sync Endpoints ───────────────────────────────────────────────────
 
+def _chaos_headers() -> dict:
+    """The key travels with the sync calls to catalog and checkout (all three share CHAOS_KEY)."""
+    return {CHAOS_HEADER: chaos_key()} if chaos_key() else {}
+
+
 @app.get("/api/faults")
 async def get_all_faults():
     return fault_registry.get_all()
 
 
-@app.post("/api/faults")
+@app.post("/api/faults", dependencies=[Depends(require_chaos_key)])
 async def set_fault(req: FaultToggleRequest):
     # Update local frontend registry
     local_state = fault_registry.set_fault(req.fault_type, req.enabled, **req.params)
@@ -218,19 +225,19 @@ async def set_fault(req: FaultToggleRequest):
     async with httpx.AsyncClient(timeout=4.0) as client:
         for url in [CATALOG_URL, CHECKOUT_URL]:
             try:
-                await client.post(f"{url}/admin/faults", json=req.model_dump())
+                await client.post(f"{url}/admin/faults", json=req.model_dump(), headers=_chaos_headers())
             except Exception as e:
                 log.warning("Could not sync fault to %s: %s", url, e)
     return local_state
 
 
-@app.post("/api/faults/reset")
+@app.post("/api/faults/reset", dependencies=[Depends(require_chaos_key)])
 async def reset_all_faults():
     fault_registry.reset_all()
     async with httpx.AsyncClient(timeout=4.0) as client:
         for url in [CATALOG_URL, CHECKOUT_URL]:
             try:
-                await client.post(f"{url}/admin/faults/reset")
+                await client.post(f"{url}/admin/faults/reset", headers=_chaos_headers())
             except Exception as e:
                 log.warning("Could not sync fault reset to %s: %s", url, e)
     return {"status": "all_faults_cleared"}

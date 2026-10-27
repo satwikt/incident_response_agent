@@ -567,18 +567,40 @@
       }
     }
 
+    // Fault changes may need the demo's chaos key (X-Chaos-Key). Asked once per browser session, only when the server says so.
+    async function postFault(url, body) {
+      const send = () => {
+        let key = "";
+        try { key = sessionStorage.getItem("chaosKey") || ""; } catch (e) { /* storage blocked: ask each time */ }
+        const headers = { "Content-Type": "application/json" };
+        if (key) headers["X-Chaos-Key"] = key;
+        return fetch(url, { method: "POST", headers, body: body === undefined ? undefined : JSON.stringify(body) });
+      };
+      let res = await send();
+      if (res.status === 401) {
+        const key = window.prompt("This demo protects fault injection. Enter the chaos key (it is in the testing instructions):");
+        if (!key) throw new Error("chaos key required");
+        try { sessionStorage.setItem("chaosKey", key.trim()); } catch (e) { /* ignore */ }
+        res = await send();
+        if (res.status === 401) {
+          try { sessionStorage.removeItem("chaosKey"); } catch (e) { /* ignore */ }
+          throw new Error("chaos key rejected");
+        }
+      }
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res;
+    }
+
     async function toggleFault(faultType, enabled, params = {}) {
       logMsg(`Setting fault '${faultType}' -> ${enabled ? "ACTIVE" : "DISABLED"}...`);
       try {
-        const res = await fetch("/api/faults", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fault_type: faultType, enabled: enabled, params: params }),
-        });
-        const data = await res.json();
+        const res = await postFault("/api/faults", { fault_type: faultType, enabled: enabled, params: params });
+        await res.json();
         updateCardUI(faultType, enabled);
         logMsg(`Fault '${faultType}' state confirmed: enabled=${enabled}`);
       } catch (err) {
+        const sw = document.getElementById(`switch-${faultType}`);
+        if (sw) sw.checked = !enabled;      // the change did not happen: put the switch back
         logMsg(`Error toggling fault '${faultType}': ${err.message}`);
       }
     }
@@ -586,7 +608,7 @@
     async function resetAllFaults() {
       logMsg("Resetting all runtime faults to nominal...");
       try {
-        const res = await fetch("/api/faults/reset", { method: "POST" });
+        const res = await postFault("/api/faults/reset");
         await res.json();
         const keys = ["payment_failure", "payment_db_fail", "high_latency", "db_pool_exhaustion", "image_delay", "memory_leak", "error_spike"];
         keys.forEach(k => updateCardUI(k, false));
