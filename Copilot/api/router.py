@@ -36,6 +36,7 @@ from agent import config
 from agent.agent import root_agent
 from agent.laya_classifier import get_laya_classifier
 from agent.llm import clean_agent_output, get_nemotron_model_name, scrub_secrets
+from api import budget
 from agent.laya_classifier import _context_facts
 from agent.memory import parse_proposed_action, context_of
 from agent.query_agent import query_agent
@@ -395,6 +396,14 @@ async def ask_chat(id: int, request: AskChatRequest):
         raise HTTPException(status_code=404, detail="Chat not found")
 
     _insert_message(id, "user", request.message)
+
+    paused = budget.exhausted_reason()
+    if paused:
+        text = budget.budget_reply(request.message, paused)
+        _insert_message(id, "agent", text, 0)
+        log.warning("Chat %s answered without a model call: demo budget reached (%s)", id, paused)
+        return {"response": text, "llm_calls": 0, "intent": None, "agent": None, "incident_id": None,
+                "tier": None, "model": None, "budget_exhausted": True}
 
     if chat["title"] == "New Chat" and len(chat.get("messages", [])) == 0:
         new_title = request.message[:30]

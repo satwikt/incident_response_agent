@@ -152,9 +152,9 @@ class DiagnosisService:
         if now < self._breaker_until:
             status, text = "breaker", templated("the model was failing repeatedly; paused briefly")
         elif self.daily_token_budget and incidents.tokens_used_since(int((now - 86400) * 1000)) >= self.daily_token_budget:
-            status, text = "budget", templated(f"daily model budget of {self.daily_token_budget} tokens reached")
+            status, text = "budget", templated(f"demo budget reached: daily model budget of {self.daily_token_budget} tokens used")
         elif len(self._runs) >= self.max_runs_per_hour:
-            status, text = "cap", templated(f"hourly limit of {self.max_runs_per_hour} diagnoses reached")
+            status, text = "cap", templated(f"demo budget reached: hourly limit of {self.max_runs_per_hour} diagnoses used")
         else:
             self._runs.append(now)
             try:

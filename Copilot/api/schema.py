@@ -41,6 +41,7 @@ class AskChatResponse(BaseModel):
     model: Optional[str] = None
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
+    budget_exhausted: Optional[bool] = None   # True: no model was called (demo budget); the text may be a labelled replay
 
 
 class RenameChatRequest(BaseModel):

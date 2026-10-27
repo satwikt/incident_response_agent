@@ -24,7 +24,12 @@ done
 compose=(docker compose)
 [ -n "${COMPOSE_FILES:-}" ] && compose=(docker compose $COMPOSE_FILES)   # e.g. COMPOSE_FILES="-f docker-compose.yml -f deploy/docker-compose.prod.yml"
 
-project=$("${compose[@]}" config --format json | python3 -c 'import sys,json; print(json.load(sys.stdin)["name"])')
+PY=""
+for c in python3 python; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys' >/dev/null 2>&1; then PY="$c"; break; fi
+done
+[ -n "$PY" ] || { echo "python3 (or python) is required" >&2; exit 2; }
+project=$("${compose[@]}" config --format json | "$PY" -c 'import sys,json; print(json.load(sys.stdin)["name"])' | tr -d '\r')
 [ -n "$project" ] || { echo "Could not determine the compose project name (is Docker running?)" >&2; exit 1; }
 
 chaos_hdr=()

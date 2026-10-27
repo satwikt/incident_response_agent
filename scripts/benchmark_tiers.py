@@ -228,6 +228,7 @@ class Bench:
             "prompt_tokens": reply.get("prompt_tokens"), "completion_tokens": reply.get("completion_tokens"),
             "action": parse_action(reply.get("response", "")), "joined_incident": reply.get("incident_id") == inc["id"],
             "recalled": [r.get("incident_id") for r in after.get("recalled", [])],
+            "question": question, "reply_text": reply.get("response", ""),
         }
 
     def resolve_and_index(self, incident_id: str, memory_target: int) -> None:
@@ -239,6 +240,21 @@ class Bench:
         left = self.settle_s - (time.time() - t0)
         if left > 0:                      # let the post-resolve grace window pass; excluded from all measurements
             time.sleep(left)
+
+
+def build_replay(rows: list[dict], meta: dict) -> dict | None:
+    """A recorded real run for the chat's demo-budget fallback: one reply per scenario, preferring a run whose tier was as expected."""
+    replies: dict = {}
+    for name, _fault, _q, expected in SCENARIOS:
+        cands = [r for r in rows if r.get("scenario") == name and r.get("http_status") == 200 and (r.get("reply_text") or "").strip()]
+        cands.sort(key=lambda r: (r.get("tier") != expected, r.get("replicate", 0)))
+        if cands:
+            c = cands[0]
+            replies[name] = {"question": c["question"], "response": c["reply_text"], "tier": c.get("tier"), "model": c.get("model")}
+    if not replies:
+        return None
+    return {"meta": {"recorded": meta.get("date", "?"), "commit": meta.get("commit", "?"), "source": "scripts/benchmark_tiers.py"},
+            "replies": replies}
 
 
 def git_commit() -> str:
@@ -265,6 +281,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--settle", type=float, default=95.0, help="seconds to wait after a resolve before the next fault (> RESOLVE_GRACE_S)")
     ap.add_argument("--reset-cmd", default=None, help="command that wipes copilot + Hindsight data (default: scripts/reset_demo.*)")
     ap.add_argument("--out-dir", default=str(ROOT / "docs"))
+    ap.add_argument("--replay-out", default=str(ROOT / "Copilot" / "data" / "replay.json"),
+                    help="also record the replies as the chat's demo-budget replay (empty string to skip)")
     ap.add_argument("--render", action="store_true", help="rebuild benchmark.md from the existing benchmark.json and exit")
     args = ap.parse_args(argv)
     out = Path(args.out_dir)
@@ -297,6 +315,11 @@ def main(argv: list[str] | None = None) -> int:
             (out / "benchmark.json").write_text(json.dumps({"meta": meta, "runs": rows}, indent=2), encoding="utf-8")
             (out / "benchmark.md").write_text(render_markdown(summarize(rows), meta), encoding="utf-8")
             print(f"wrote {out / 'benchmark.md'} and benchmark.json ({len(rows)} runs)")
+            replay = build_replay(rows, meta) if args.replay_out else None
+            if replay:
+                Path(args.replay_out).parent.mkdir(parents=True, exist_ok=True)
+                Path(args.replay_out).write_text(json.dumps(replay, indent=2), encoding="utf-8")
+                print(f"wrote {args.replay_out} (replay of {len(replay['replies'])} scenario(s))")
     return 0
 
 

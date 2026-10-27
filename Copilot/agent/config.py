@@ -92,6 +92,11 @@ AGENT_MAX_LLM_CALLS: int = _int("AGENT_MAX_LLM_CALLS", 6)
 # have daily caps (200,000 tokens for one Groq model); a noisy afternoon must not use the whole day's quota.
 AGENT_DAILY_TOKEN_BUDGET: int = _int("AGENT_DAILY_TOKEN_BUDGET", 0)
 AGENT_TIMEOUT_S: float = _float("AGENT_TIMEOUT_S", 120.0)
+# Chat cost guard for a public demo (0 = unlimited): model calls made by chat agents per hour / per day, counted from stored
+# messages so a restart cannot reset them. At the limit the chat says so and shows a labelled replay (api/budget.py).
+CHAT_MAX_LLM_CALLS_PER_HOUR: int = _int("CHAT_MAX_LLM_CALLS_PER_HOUR", 0)
+CHAT_MAX_LLM_CALLS_PER_DAY: int = _int("CHAT_MAX_LLM_CALLS_PER_DAY", 0)
+REPLAY_PATH: str = os.getenv("REPLAY_PATH", "data/replay.json")
 # Upper bound for the memory pre-recall of a chat RCA (Hindsight may be starting or slow); the chat goes on without it.
 CHAT_RECALL_TIMEOUT_S: float = _float("CHAT_RECALL_TIMEOUT_S", 8.0)
 AGENT_RATE_LIMIT_RETRIES: int = _int("AGENT_RATE_LIMIT_RETRIES", 3)
