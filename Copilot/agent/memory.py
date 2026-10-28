@@ -291,8 +291,14 @@ class HindsightMemory:
                 continue
             tags = list(getattr(item, "tags", None) or [])
             prior = found.get(doc)
-            if prior is not None and (prior.exact or not exact) and prior.score >= final:
-                continue
+            if prior is not None:
+                # the same document can come back as several hits; never lose the fix/failed tags of an earlier one
+                tags = list(dict.fromkeys(list(prior.tags or []) + tags))
+                if (prior.exact or not exact) and prior.score >= final:
+                    prior.tags = tags
+                    prior.fix = prior.fix or _tag_value(tags, _FIX_TAG)
+                    prior.failed = list(dict.fromkeys(t[len(_FAILED_TAG):] for t in tags if t.startswith(_FAILED_TAG)))
+                    continue
             found[doc] = Recalled(
                 incident_id=doc, text=(getattr(item, "text", "") or "")[:400], exact=exact or (prior.exact if prior else False),
                 score=float(final), fix=_tag_value(tags, _FIX_TAG),

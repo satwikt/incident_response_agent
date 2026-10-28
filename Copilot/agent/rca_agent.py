@@ -33,7 +33,7 @@ log = logging.getLogger("copilot.rca_agent")
 
 def select_model_tier(incident: dict, recalled_matches: Optional[List[dict]] = None) -> str:
     """Select appropriate Nemotron tier (ultra, super, nano) for the incident."""
-    matches = recalled_matches or incident.get("recalled") or []
+    matches = (incident.get("recalled") or []) if recalled_matches is None else recalled_matches
     if not matches:
         log.info("No prior incident recalled from memory. Selecting Nemotron Ultra.")
         return "ultra"
