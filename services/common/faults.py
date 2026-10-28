@@ -17,6 +17,8 @@ class FaultRegistry:
         self._active_faults: Dict[str, Dict[str, Any]] = {
             "payment_failure": {"enabled": False, "rate": 1.0, "status_code": 500},
             "payment_db_fail": {"enabled": False, "table_name": "payment_transactions_v2"},
+            # silent failure: the payment is captured but the order is never persisted; the customer sees HTTP 200
+            "order_persist_fail": {"enabled": False, "rate": 1.0},
             "high_latency": {"enabled": False, "delay_seconds": 2.5},
             "db_pool_exhaustion": {"enabled": False, "leak_count": 20},
             "image_delay": {"enabled": False, "delay_seconds": 3.0},

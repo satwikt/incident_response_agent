@@ -26,6 +26,7 @@ echo "====================================================================="
 
 python3 Copilot/scripts/index_docs.py \
   --docs-path "${DOCS_PATH}" \
+  --extra-docs-path "docs/runbooks" \
   --chroma-path "${CHROMA_PATH}" \
   --collection "${COLLECTION_NAME}" \
   --index-path "${INDEX_PATH}"

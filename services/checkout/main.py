@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import time
 from typing import Any, Dict, List, Optional
 import uuid
@@ -54,6 +55,13 @@ CATALOG_URL = os.getenv("CATALOG_SERVICE_URL", "http://catalog:5001")
 
 # In-memory orders store
 _ORDERS: Dict[str, Order] = {}
+
+# Payment ledger: payment_id -> {order_id|None, amount, captured_at, cart_id, customer}. A payment with order_id None
+# was captured by the gateway but never became an order (the silent failure the reconciliation check looks for).
+_PAYMENTS: Dict[str, Dict[str, Any]] = {}
+RECON_INTERVAL_S = float(os.getenv("RECON_INTERVAL_S", "15"))
+RECON_GRACE_S = float(os.getenv("RECON_GRACE_S", "5"))
+_recon_reported: int = 0     # unmatched count already reported, so only NEW gaps raise an alert
 
 # Held connections for DB pool exhaustion simulation
 _HELD_CONNECTIONS: List[Any] = []
@@ -134,11 +142,48 @@ async def _apply_checkout_faults():
         raise HTTPException(status_code=500, detail="InternalServerError: Checkout processing pipeline failed")
 
 
+def _unmatched(now: float) -> List[str]:
+    return [pid for pid, p in _PAYMENTS.items() if p["order_id"] is None and now - p["captured_at"] >= RECON_GRACE_S]
+
+
+def reconcile_check(now: Optional[float] = None) -> Dict[str, Any]:
+    """Compare captured payments with persisted orders. Logs one CRITICAL line when NEW unmatched payments appear."""
+    global _recon_reported
+    now = now if now is not None else time.time()
+    pending = _unmatched(now)
+    summary = {"payments_captured": len(_PAYMENTS), "orders_persisted": len(_ORDERS), "unmatched_payments": len(pending)}
+    if len(pending) > _recon_reported:
+        amount = sum(_PAYMENTS[p]["amount"] for p in pending)
+        oldest = min(_PAYMENTS[p]["captured_at"] for p in pending)
+        log.critical("CRITICAL RECONCILIATION_GAP error: %d payment(s) captured with no order (payments_captured=%d "
+                     "orders_persisted=%d unmatched_amount=$%.2f oldest_unmatched_age_s=%d). Customers were charged "
+                     "and shown HTTP 200 but no order exists. First payment ids: %s",
+                     len(pending), summary["payments_captured"], summary["orders_persisted"], amount,
+                     int(now - oldest), ", ".join(pending[:3]))
+    _recon_reported = len(pending)
+    return summary
+
+
+async def _reconcile_loop() -> None:
+    while True:
+        await asyncio.sleep(RECON_INTERVAL_S)
+        try:
+            reconcile_check()
+        except Exception:  # noqa: BLE001 - a monitoring loop must never die
+            log.exception("reconciliation check failed")
+
+
+@app.on_event("startup")
+async def _start_reconciliation() -> None:
+    app.state.recon_task = asyncio.create_task(_reconcile_loop())
+
+
 @app.get("/health")
 async def health_check():
     return {
         "status": "healthy",
         "service": "checkout",
+        "unmatched_payments": len(_unmatched(time.time())),
         "orders_count": len(_ORDERS),
         "held_pool_connections": len(_HELD_CONNECTIONS),
     }
@@ -180,12 +225,28 @@ async def process_checkout(req: CheckoutRequest, request: Request):
         with tracer.start_as_current_span("checkout.payment_gateway") as pay_span:
             await _apply_checkout_faults()
             pay_span.set_attribute("payment.status", "APPROVED")
+            total = float(cart_data.get("total_usd", 1299.00)) if cart_data and cart_data.get("total_usd") else 1299.00
+            payment_id = f"pay-{uuid.uuid4().hex[:8]}"
+            _PAYMENTS[payment_id] = {"order_id": None, "amount": total, "captured_at": time.time(),
+                                     "cart_id": req.cart_id, "customer": req.customer_email}
+            pay_span.set_attribute("payment.id", payment_id)
+            log.info("Payment %s captured for $%.2f (cart %s)", payment_id, total, req.cart_id)
 
         # 3. Create Order
         with tracer.start_as_current_span("checkout.persist_order") as db_span:
             order_id = f"ord-{uuid.uuid4().hex[:8]}"
             items = cart_data.get("items", []) if cart_data else []
-            total = float(cart_data.get("total_usd", 1299.00)) if cart_data and cart_data.get("total_usd") else 1299.00
+
+            if fault_registry.is_active("order_persist_fail") and random.random() < float(
+                    fault_registry.get_params("order_persist_fail").get("rate", 1.0)):
+                # The order service never acknowledged the write. The money is already captured, and the customer is
+                # told the order is processing, so no 5xx is ever returned: only a payment/order reconciliation sees it.
+                db_span.set_attribute("order.persisted", False)
+                log.error("Order write error for payment %s: OrderServiceTimeout, order not persisted, "
+                            "gateway webhook retry pending", payment_id)
+                return Order(id=order_id, cart_id=req.cart_id, customer_email=req.customer_email,
+                             shipping_address=req.shipping_address, items=items, total_usd=total,
+                             status="PROCESSING", created_at=time.time(), trace_id=trace_id_str)
 
             order = Order(
                 id=order_id,
@@ -199,6 +260,7 @@ async def process_checkout(req: CheckoutRequest, request: Request):
                 trace_id=trace_id_str,
             )
             _ORDERS[order_id] = order
+            _PAYMENTS[payment_id]["order_id"] = order_id
             db_span.set_attribute("order.id", order_id)
             db_span.set_attribute("order.total_usd", total)
             log.info("Order %s confirmed successfully for $%.2f (trace_id=%s)", order_id, total, trace_id_str)
@@ -226,6 +288,24 @@ async def get_faults():
 @app.post("/admin/faults", dependencies=[Depends(require_chaos_key)])
 async def set_fault(req: FaultToggleRequest):
     return fault_registry.set_fault(req.fault_type, req.enabled, **req.params)
+
+
+@app.post("/admin/reconcile", dependencies=[Depends(require_chaos_key)])
+async def reconcile_orders():
+    """Remediation: create the missing order for every captured payment that has none (the reconcile_orders action)."""
+    global _recon_reported
+    fixed = []
+    for pid, p in _PAYMENTS.items():
+        if p["order_id"] is None:
+            order_id = f"ord-{uuid.uuid4().hex[:8]}"
+            _ORDERS[order_id] = Order(id=order_id, cart_id=p["cart_id"], customer_email=p["customer"],
+                                      shipping_address="(recovered by reconciliation)", items=[],
+                                      total_usd=p["amount"], status="CONFIRMED", created_at=time.time())
+            p["order_id"] = order_id
+            fixed.append(pid)
+    _recon_reported = 0
+    log.warning("Reconciliation created %d missing order(s) for captured payments", len(fixed))
+    return {"reconciled": len(fixed), "payment_ids": fixed}
 
 
 @app.post("/admin/faults/reset", dependencies=[Depends(require_chaos_key)])

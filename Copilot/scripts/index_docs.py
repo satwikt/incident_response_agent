@@ -307,6 +307,9 @@ def search_index(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Index documentation for RAG search.")
     parser.add_argument("--docs-path", type=str, default="otel_demo/docs", help="Directory of markdown docs.")
+    parser.add_argument("--extra-docs-path", action="append", default=[], help="Additional markdown directory (repeatable), e.g. docs/runbooks.")
+    parser.add_argument("--skip-chroma", action="store_true", help="Write only the BM25 JSON index (no embedding model download).")
+    parser.add_argument("--merge", action="store_true", help="Keep existing indexed chunks; replace only those from the given directories.")
     parser.add_argument("--corpus-path", type=str, default="", help="Optional JSONL corpus file.")
     parser.add_argument("--chroma-path", type=str, default="Copilot/data/chroma_db", help="Destination path for ChromaDB vector store.")
     parser.add_argument("--collection", type=str, default="astronomy_shop_docs", help="ChromaDB collection name.")
@@ -324,23 +327,36 @@ def main() -> None:
             print(f"Loaded {len(loaded)} chunks from corpus {corpus_p}")
 
     # 2. Load markdown files from docs path (skipping internal dev_docs and legacy archives)
-    docs_p = Path(args.docs_path)
-    if docs_p.exists():
-        md_count = 0
-        for md_file in docs_p.rglob("*.md"):
-            if "dev_docs" in md_file.parts or "legacy" in md_file.parts:
-                continue
-            file_chunks = chunk_markdown_file(md_file)
-            chunks.extend(file_chunks)
-            md_count += len(file_chunks)
-        print(f"Loaded {md_count} chunks from {docs_p} (excluding dev_docs/legacy)")
+    for docs_p in [Path(args.docs_path)] + [Path(p) for p in args.extra_docs_path]:
+        if docs_p.exists():
+            md_count = 0
+            for md_file in docs_p.rglob("*.md"):
+                if "dev_docs" in md_file.parts or "legacy" in md_file.parts:
+                    continue
+                file_chunks = chunk_markdown_file(md_file)
+                chunks.extend(file_chunks)
+                md_count += len(file_chunks)
+            print(f"Loaded {md_count} chunks from {docs_p} (excluding dev_docs/legacy)")
 
     if not chunks:
         print("No documents found to index.")
         return
 
+    if args.merge and Path(args.index_path).is_file():
+        try:
+            old = json.loads(Path(args.index_path).read_text(encoding="utf-8")).get("chunks", [])
+            roots = [str(Path(p)) for p in [args.docs_path] + list(args.extra_docs_path)]
+            # stored chunks use the index field names; map them back to the raw chunk shape build_index consumes
+            keep = [{"id": c["id"], "doc_title": c["title"], "heading": c["heading"], "service": c["service"],
+                     "source_path": c["source"], "text": c["text"]}
+                    for c in old if not any(str(c.get("source", "")).startswith(r) for r in roots)]
+            print(f"Merging: keeping {len(keep)} existing chunks, replacing the rest")
+            chunks = keep + chunks
+        except Exception as exc:  # noqa: BLE001 - a bad old index just means a fresh one
+            print(f"Could not merge with the existing index ({exc}); rebuilding it")
+
     # 3. Vectorize into ChromaDB
-    chroma_count = index_with_chroma(chunks, chroma_path=args.chroma_path, collection_name=args.collection)
+    chroma_count = None if args.skip_chroma else index_with_chroma(chunks, chroma_path=args.chroma_path, collection_name=args.collection)
     if chroma_count is not None:
         print(f"Successfully vectorized {chroma_count} chunks into ChromaDB at: {args.chroma_path}")
     else:

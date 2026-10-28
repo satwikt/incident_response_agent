@@ -73,6 +73,7 @@ RESPONSE FORMAT for diagnostic answers:
    - For code regressions or deployment issues: propose rollback_release.
    - For downstream service outages: propose enable_fallback.
    - For an injected or toggled fault / feature flag that is switched on (log says "fault active"): propose disable_fault.
+   - For a CRITICAL RECONCILIATION_GAP (payments captured but no order, checkout still returning 200): first search_docs for the runbook and cite it; propose disable_fault if a fault is active, otherwise reconcile_orders after the cause is fixed.
    - Or any dynamic snake_case action name suited to the incident.
    End your response with exactly one line:
    Proposed action: <name>

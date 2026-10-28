@@ -155,7 +155,7 @@ MEMORY_MIN_SCORE: float = _float("MEMORY_MIN_SCORE", 0.05)   # on the FINAL reca
 # Only these actions can ever be proposed; anything else in a model answer is ignored.
 ALLOWED_ACTIONS = tuple(a.strip() for a in os.getenv(
     "ALLOWED_ACTIONS",
-    "flush_pool,restart_worker,rollback_config,rollback_release,enable_fallback,create_missing_table,run_db_migration,apply_schema_migration,disable_fault,hotfix_query,patch_code"
+    "flush_pool,restart_worker,rollback_config,rollback_release,enable_fallback,create_missing_table,run_db_migration,apply_schema_migration,disable_fault,reconcile_orders,hotfix_query,patch_code"
 ).split(",") if a.strip())
 APP_OPS_URL: str = os.getenv("APP_OPS_URL", "").rstrip("/")
 OPS_KEY: str = os.getenv("OPS_KEY", "")

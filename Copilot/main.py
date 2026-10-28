@@ -1,6 +1,9 @@
 """Main FastAPI application entry point serving the API and the frontend UI."""
 
+import logging
 import os
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -15,8 +18,22 @@ from agent.watcher import start_watcher, stop_watcher
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend")
 
 
+def reindex_runbooks() -> None:
+    """Fold the mounted runbooks (docs/runbooks) into the docs index so search_docs cites them. Fails open."""
+    runbooks = os.getenv("RUNBOOKS_PATH", "/app/docs/runbooks")
+    if not os.path.isdir(runbooks):
+        return
+    try:
+        subprocess.run([sys.executable, "scripts/index_docs.py", "--docs-path", "/nonexistent", "--extra-docs-path", runbooks,
+                        "--merge", "--skip-chroma", "--index-path", os.getenv("DOCS_INDEX_PATH", "data/docs_index.json"),
+                        "--chroma-path", "data/chroma_db"], check=True, timeout=120, capture_output=True)
+    except Exception as exc:  # noqa: BLE001 - a missing runbook index must never stop the app
+        logging.getLogger("copilot.main").warning("runbook re-index failed (%s)", type(exc).__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    reindex_runbooks()
     watcher_task = await start_watcher()
     yield
     await stop_watcher(watcher_task)

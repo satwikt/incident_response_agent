@@ -423,6 +423,25 @@
         </div>
       </div>
 
+      <!-- 1c. Payment captured, order not created (silent failure) -->
+      <div class="fault-card" id="card-order_persist_fail">
+        <div class="card-top">
+          <div class="fault-title">
+            Paid, No Order
+          </div>
+          <span class="status-badge nominal" id="badge-order_persist_fail">Nominal</span>
+        </div>
+        <p class="fault-desc">The payment is captured but the order write times out. <code>checkout</code> still returns HTTP 200 (status PROCESSING), so error and latency alerts stay quiet. Only the payment/order reconciliation detects it.</p>
+        <div class="fault-meta">Target: checkout service (POST /checkout -> order persistence)</div>
+        <div class="toggle-bar">
+          <span style="font-size:0.85rem;color:var(--text-muted);">Active Status</span>
+          <label class="switch">
+            <input type="checkbox" id="switch-order_persist_fail" onchange="toggleFault('order_persist_fail', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
       <!-- 2. High Latency Injection -->
       <div class="fault-card" id="card-high_latency">
         <div class="card-top">
