@@ -30,6 +30,7 @@ def _clamp(value: float, lo: float, hi: float) -> float:
         v = lo
     return max(lo, min(hi, v))
 from .external_obs_tools import (
+    _http_get_json,
     get_feature_flags,
     get_trace_by_id,
     query_service_logs,
@@ -237,6 +238,33 @@ def get_service_health() -> dict:
     except Exception as exc:
         log.exception("get_service_health failed")
         return {"service": SERVICE_NAME, "status": "unknown", "error": str(exc)}
+
+
+def get_error_logs(minutes: float = 5) -> dict:
+    """Count of ERROR/exception log lines that are not request events, with a few samples (fails open)."""
+    try:
+        return store.error_logs(SERVICE_NAME, minutes)
+    except Exception as exc:
+        log.exception("get_error_logs failed")
+        return {"count": 0, "sample_lines": [], "error": str(exc), "source": "events"}
+
+
+def get_resource_usage() -> dict:
+    """Resident memory (MB) of each monitored process, from Prometheus. Fails open: no data means no resource breach."""
+    if not config.MEMORY_JOBS:
+        return {"processes": [], "source": "prometheus"}
+    import urllib.parse
+    promql = f'process_resident_memory_bytes{{job=~"{config.MEMORY_JOBS}"}}'
+    url = f"{config.PROMETHEUS_URL}/api/v1/query?{urllib.parse.urlencode({'query': promql})}"
+    try:
+        resp = _http_get_json(url, timeout=2.0)
+        rows = resp.get("data", {}).get("result", []) if resp.get("status") == "success" else []
+        procs = [{"name": r["metric"].get("job", "process").replace("astronomy-", ""),
+                  "rss_mb": float(r["value"][1]) / (1024 * 1024)} for r in rows]
+        return {"processes": procs, "source": "prometheus"}
+    except Exception as exc:  # noqa: BLE001 - a Prometheus outage must never break the watcher
+        log.warning("get_resource_usage failed (%s)", exc)
+        return {"processes": [], "error": str(exc), "source": "prometheus"}
 
 
 # ─── Documentation RAG Tool ───────────────────────────────────────────────────

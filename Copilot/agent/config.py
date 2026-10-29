@@ -161,6 +161,8 @@ APP_OPS_URL: str = os.getenv("APP_OPS_URL", "").rstrip("/")
 OPS_KEY: str = os.getenv("OPS_KEY", "")
 
 # ── External Observability & Telemetry APIs ──────────────────────────────────
+# Prometheus job names (regex) whose resident memory the watcher judges; empty disables the resource check.
+MEMORY_JOBS: str = os.getenv("MEMORY_JOBS", "astronomy-catalog|astronomy-checkout|astronomy-frontend")
 PROMETHEUS_URL: str = os.getenv("PROMETHEUS_URL", "http://prometheus:9090").rstrip("/")
 LOKI_URL: str = os.getenv("LOKI_URL", "http://loki:3100").rstrip("/")
 TEMPO_URL: str = os.getenv("TEMPO_URL", "http://tempo:3200").rstrip("/")

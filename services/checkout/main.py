@@ -287,6 +287,8 @@ async def get_faults():
 
 @app.post("/admin/faults", dependencies=[Depends(require_chaos_key)])
 async def set_fault(req: FaultToggleRequest):
+    if not req.enabled and req.fault_type.lower() == "db_pool_exhaustion":
+        _HELD_CONNECTIONS.clear()  # turning the fault off must free the "held" pool, not just stop new holds
     return fault_registry.set_fault(req.fault_type, req.enabled, **req.params)
 
 

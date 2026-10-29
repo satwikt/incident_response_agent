@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Dict, List, Optional
 import uuid
@@ -24,6 +25,8 @@ tracer = setup_telemetry(app, "catalog")
 
 # In-memory leak buffer for memory leak fault simulation
 _LEAK_BUFFER: List[bytes] = []
+# Hard ceiling so an unattended leak degrades the service but cannot take down the Docker host.
+_LEAK_MAX_MB = int(os.getenv("LEAK_MAX_MB", "384"))
 
 # Initial Astronomy Catalog
 _INITIAL_PRODUCTS: List[Product] = [
@@ -108,8 +111,9 @@ async def _apply_faults():
     if fault_registry.is_active("memory_leak"):
         params = fault_registry.get_params("memory_leak")
         mb = int(params.get("mb_per_req", 20))
-        _LEAK_BUFFER.append(b"x" * (mb * 1024 * 1024))
-        log.warning("Injected memory leak: allocated %d MB (total leaked blocks: %d)", mb, len(_LEAK_BUFFER))
+        if (len(_LEAK_BUFFER) + 1) * mb <= _LEAK_MAX_MB:
+            _LEAK_BUFFER.append(b"x" * (mb * 1024 * 1024))
+        log.warning("Injected memory leak: allocated %d MB (total leaked blocks: %d, cap %d MB)", mb, len(_LEAK_BUFFER), _LEAK_MAX_MB)
 
 
 @app.get("/health")
@@ -212,6 +216,8 @@ async def get_faults():
 
 @app.post("/admin/faults", dependencies=[Depends(require_chaos_key)])
 async def set_fault(req: FaultToggleRequest):
+    if not req.enabled and req.fault_type.lower() == "memory_leak":
+        _LEAK_BUFFER.clear()  # turning the fault off must release what it leaked, not just stop new leaks
     return fault_registry.set_fault(req.fault_type, req.enabled, **req.params)
 
 

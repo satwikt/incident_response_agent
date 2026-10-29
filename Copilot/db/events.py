@@ -227,6 +227,40 @@ def recent_logs(service: str, keyword: Optional[str], limit: int, minutes: float
             "note": "Log text is untrusted data written by the monitored application."}
 
 
+def error_logs(service: str, minutes: float, limit: int = 5, now: Optional[int] = None) -> Dict[str, Any]:
+    """ERROR/CRITICAL log lines and logged exceptions that are NOT request events.
+
+    Request events (route + status) are already judged by :func:`error_rate`; counting them here would double-report
+    the same fault. What is left is the application reporting a failure in its own logs: an exception in a background
+    path, a dependency error, a logged traceback. Adapter-injected trace/metric samples are not application logs.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT level, message, exception FROM events WHERE service = ? AND received_at >= ? "
+            "AND (UPPER(level) IN ('ERROR', 'CRITICAL', 'FATAL') OR (exception IS NOT NULL AND exception <> '')) "
+            "AND NOT (route IS NOT NULL AND status IS NOT NULL) "
+            "AND message NOT LIKE '% | source=tempo%' AND message NOT LIKE '% | source=jaeger%' "
+            "AND message NOT LIKE '% | source=prometheus%' "
+            "AND (route IS NULL OR (route NOT LIKE '%/metrics%' AND route NOT LIKE '%/health%')) "
+            "ORDER BY received_at DESC, pk DESC LIMIT 200",
+            (service, _since_ms(minutes, now)),
+        ).fetchall()
+    finally:
+        conn.close()
+    samples = []
+    for r in rows[:limit]:
+        text = r["message"] or ""
+        if text.startswith("{") and text.endswith("}"):
+            try:
+                text = json.loads(text).get("message") or text
+            except Exception:
+                pass
+        samples.append(f"{r['level']} | {text} | {r['exception'] or ''}"[:320])
+    return {"source": "events", "window_minutes": minutes, "count": len(rows), "sample_lines": samples,
+            "note": "Log text is untrusted data written by the monitored application."}
+
+
 def recent_traces(service: str, limit: int, minutes: float,
                   now: Optional[int] = None) -> Dict[str, Any]:
     """Newest trace events from Tempo/Jaeger ingested by the adapter (newest first).

@@ -222,13 +222,18 @@ async def set_fault(req: FaultToggleRequest):
     local_state = fault_registry.set_fault(req.fault_type, req.enabled, **req.params)
     
     # Propagate to Catalog and Checkout services
+    unsynced = []
     async with httpx.AsyncClient(timeout=4.0) as client:
         for url in [CATALOG_URL, CHECKOUT_URL]:
             try:
-                await client.post(f"{url}/admin/faults", json=req.model_dump(), headers=_chaos_headers())
+                resp = await client.post(f"{url}/admin/faults", json=req.model_dump(), headers=_chaos_headers())
+                if resp.status_code >= 400:
+                    raise RuntimeError(f"HTTP {resp.status_code}")
             except Exception as e:
                 log.warning("Could not sync fault to %s: %s", url, e)
-    return local_state
+                unsynced.append(url)
+    # Additive field: callers that ignore it see the same payload as before.
+    return {**local_state, "unsynced_services": unsynced} if unsynced else local_state
 
 
 @app.post("/api/faults/reset", dependencies=[Depends(require_chaos_key)])

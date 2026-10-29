@@ -92,6 +92,8 @@ def collect(window: float) -> dict:
         "slow": tools.get_slow_requests(thresholds.slow_request_min_ms, window),
         "logs": tools.get_recent_logs(",".join(thresholds.log_keywords), thresholds.log_scan_limit, window),
         "traces": tools.get_traces(window, limit=5),
+        "resource": tools.get_resource_usage(),
+        "error_logs": tools.get_error_logs(window),
     }
 
 
@@ -105,7 +107,8 @@ def signature_for(window: float, now: Optional[int] = None) -> Callable[[Optiona
 
 def run_cycle(data: dict, window: float, now: int, cfg: Optional[IncidentConfig] = None) -> List[Action]:
     """Detect breaches in ``data`` and update incident state. Returns the actions to carry out."""
-    breaches = find_breaches(data["health"], data["error"], data["latency"], data["slow"], data["logs"], thresholds)
+    breaches = find_breaches(data["health"], data["error"], data["latency"], data["slow"], data["logs"], thresholds,
+                             data.get("resource"), data.get("error_logs"))
     healthy = healthy_routes(data["error"], data["latency"], data["slow"], thresholds, config.CLOSE_RATIO)
     traffic_ok = (data["error"].get("total_request_count") or 0) >= config.MIN_REQUESTS
     return process_cycle(config.SERVICE_NAME, breaches, signature_for(window, now), healthy, traffic_ok, now,
@@ -180,6 +183,32 @@ def _enqueue_memory(inc: dict, now: int) -> None:
         incidents.update_fields(inc["id"], memory_status="pending")
 
 
+def _drop_stale_restart(inc: dict, proposed: Optional[str]) -> tuple[Optional[str], dict]:
+    """A memory incident is diagnosed some time after the alert; the leak may have been switched off and released since.
+
+    Re-read memory now: if every process is back under the threshold, a restart would reclaim nothing, so the proposal
+    is dropped and the diagnosis says so. Anything unexpected (no reading, other incident kinds) leaves it untouched.
+    """
+    limit = thresholds.memory_alert_mb
+    if proposed != "restart_worker" or limit <= 0:
+        return proposed, inc
+    if not any(f.get("kind") == "resource" for f in inc.get("fingerprints") or []):
+        return proposed, inc
+    procs = (tools.get_resource_usage() or {}).get("processes") or []
+    if not procs or max(p["rss_mb"] for p in procs) >= limit:
+        return proposed, inc
+    worst = max(procs, key=lambda p: p["rss_mb"])
+    note = (f"\n\n**Live re-check**: memory is already back to {worst['rss_mb']:.0f}MB on '{worst['name']}' "
+            f"(threshold {limit:g}MB), so the leak has stopped and been released. No restart is needed.\n"
+            "Proposed action: none")
+    incidents.set_rca(inc["id"], (inc.get("rca_text") or "") + note, inc.get("rca_status") or "ok",
+                      inc.get("llm_calls"), inc.get("llm_tokens"))
+    incidents.update_fields(inc["id"], proposed_action=None)
+    incidents.record_event(inc["id"], "diagnosis:restart-dropped", "watcher",
+                           f"memory back to {worst['rss_mb']:.0f}MB before diagnosis completed", store.now_ms())
+    return None, incidents.get(inc["id"]) or inc
+
+
 def on_diagnosis_done(incident_id: str, now: int) -> None:
     """The stored diagnosis (real or templated) is ready: send it as a follow-up, once, if the incident is still active.
 
@@ -189,6 +218,7 @@ def on_diagnosis_done(incident_id: str, now: int) -> None:
     if inc is None:
         return
     proposed = memmod.parse_proposed_action(inc.get("rca_text") or "", set(config.ALLOWED_ACTIONS))
+    proposed, inc = _drop_stale_restart(inc, proposed)
     if proposed:
         incidents.update_fields(incident_id, proposed_action=proposed)
         inc = incidents.get(incident_id) or inc

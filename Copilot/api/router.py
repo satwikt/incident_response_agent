@@ -514,6 +514,14 @@ async def ask_chat(id: int, request: AskChatRequest):
                 id, request.message, agent_reply, llm_calls, tier, _recalled_matches(past_items))
             if registered_inc_id and f"**{registered_inc_id}**" not in agent_reply:
                 agent_reply += f"\n\n🛡️ **Incident Registered:** [`{registered_inc_id}`](/dashboard) — *Track dossier and verify fix on the [Incident Dashboard](/dashboard).*"
+                reg = incidents.get(registered_inc_id) or {}
+                prior_id = reg.get("recurrence_of")
+                if prior_id:
+                    prior = incidents.get(prior_id) or {}
+                    fix = prior.get("proposed_action") or next(
+                        (a.get("action") for a in prior.get("actions") or [] if a.get("worked")), None)
+                    agent_reply += (f"\n\n🔁 **Recurrence:** `{registered_inc_id}` is a recurrence of `{prior_id}`"
+                                    + (f", which was resolved with `{fix}`." if fix else "."))
         except Exception as e:
             log.warning("Failed to auto-register chat incident: %s", e)
 
