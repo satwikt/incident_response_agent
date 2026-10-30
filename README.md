@@ -1,6 +1,6 @@
 # Incident Response Copilot: an SRE agent that remembers
 
-> Built for the **Nebius x NVIDIA Global AI Hackathon** · Track: **<TRACK>**
+> Built for the **Nebius x NVIDIA Global AI Hackathon** · Track: **Best apps and agents**
 
 An AI on-call teammate. It watches a microservice stack, opens incidents on its own, finds the root cause, and **remembers which fixes worked or failed**, so the next occurrence is diagnosed faster and with a smaller, cheaper model.
 

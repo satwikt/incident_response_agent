@@ -1098,11 +1098,25 @@
             }
         }
 
+        // The tab label shows the memory count even while another tab is open. The endpoint queries Hindsight, so off the
+        // memory tab it is refreshed at most every 30 s and only the count is touched.
+        let lastMemoryCountAt = 0;
+        async function loadMemoryCount() {
+            lastMemoryCountAt = Date.now();
+            try {
+                const data = await fetchJSON('/api/memory/past-incidents');
+                document.getElementById('count-memory').textContent = data.total;
+            } catch (err) { /* leave the previous count */ }
+        }
+
         // ── Global Load & Auto-Refresh ───────────────────────────────────────────
         async function loadAll() {
             await Promise.all([loadTelemetry(), loadIncidents()]);
             if (currentTab === 'memory') {
                 await loadMemories();
+                lastMemoryCountAt = Date.now();
+            } else if (Date.now() - lastMemoryCountAt > 30000) {
+                await loadMemoryCount();
             }
             document.getElementById('last-updated-text').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
         }
