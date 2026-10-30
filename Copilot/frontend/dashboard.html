@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incident Response Dashboard</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        bg: '#0B0E14',
+                        surface: '#121722',
+                        surface2: '#1A2130',
+                        surface3: '#222C3E',
+                        line: '#232B3D',
+                        text: '#E7EAF0',
+                        muted: '#8792A6',
+                        dim: '#5B6478',
+                        accent: '#F5A623',
+                        accentSoft: '#2E2515',
+                        danger: '#F0576B',
+                        dangerSoft: '#2E1A1F',
+                        success: '#3ECF8E',
+                        successSoft: '#162D24',
+                        warning: '#FFB800',
+                        warningSoft: '#2B2311',
+                    },
+                    fontFamily: {
+                        display: ['"Space Grotesk"', 'sans-serif'],
+                        body: ['Inter', 'sans-serif'],
+                        mono: ['"IBM Plex Mono"', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { scrollbar-width: thin; scrollbar-color: #232B3D transparent; }
+        *::-webkit-scrollbar { width: 6px; height: 6px; }
+        *::-webkit-scrollbar-thumb { background: #232B3D; border-radius: 999px; }
+        .pulse-dot { position: relative; }
+        .pulse-dot::before {
+            content: ''; position: absolute; inset: 0; border-radius: 999px;
+            background: currentColor; animation: pulseRing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        @keyframes pulseRing {
+            0% { transform: scale(1); opacity: 0.6; }
+            100% { transform: scale(2.8); opacity: 0; }
+        }
+
+        /* Rich RCA Typography */
+        .rca-prose {
+            color: #E7EAF0;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.875rem;
+            line-height: 1.65;
+        }
+        .rca-prose h1, .rca-prose h2, .rca-prose h3, .rca-prose h4 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            color: #F5A623;
+            margin-top: 1.25rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .rca-prose h1 { font-size: 1.2rem; border-bottom: 1px solid #232B3D; padding-bottom: 0.35rem; }
+        .rca-prose h2 { font-size: 1.1rem; border-bottom: 1px solid #232B3D; padding-bottom: 0.35rem; }
+        .rca-prose h3 { font-size: 1rem; }
+        .rca-prose h4 { font-size: 0.9rem; color: #8792A6; }
+        .rca-prose p { margin-bottom: 0.75rem; }
+        .rca-prose strong { color: #FFFFFF; font-weight: 600; }
+        .rca-prose ul {
+            list-style-type: none;
+            padding-left: 0;
+            margin-bottom: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+        .rca-prose ul > li {
+            position: relative;
+            padding-left: 1.25rem;
+        }
+        .rca-prose ul > li::before {
+            content: "•";
+            position: absolute;
+            left: 0.25rem;
+            color: #F5A623;
+            font-weight: bold;
+        }
+        .rca-prose ol {
+            list-style-type: decimal;
+            padding-left: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .rca-prose ol > li {
+            padding-left: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        .rca-prose code {
+            font-family: 'IBM Plex Mono', monospace;
+            background: #1A2130;
+            color: #F5A623;
+            padding: 0.15rem 0.4rem;
+            border-radius: 0.35rem;
+            font-size: 0.825em;
+            border: 1px solid #232B3D;
+        }
+        .rca-prose pre {
+            background: #0B0E14;
+            border: 1px solid #232B3D;
+            border-radius: 0.5rem;
+            padding: 0.85rem 1rem;
+            margin: 0.75rem 0;
+            overflow-x: auto;
+        }
+        .rca-prose pre code {
+            background: transparent;
+            color: #E7EAF0;
+            padding: 0;
+            border: none;
+            font-size: 0.825rem;
+            line-height: 1.5;
+        }
+        .rca-prose blockquote {
+            border-left: 3px solid #F5A623;
+            background: #1A2130;
+            padding: 0.5rem 1rem;
+            margin: 0.75rem 0;
+            border-radius: 0 0.5rem 0.5rem 0;
+            color: #8792A6;
+        }
+    </style>
+</head>
+<body class="bg-bg text-text font-body min-h-screen flex flex-col selection:bg-accent/20 selection:text-accent">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-line bg-surface/80 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center text-accent">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                </div>
+                <div>
+                    <h1 class="font-display font-bold text-base tracking-tight flex items-center gap-2">
+                        Incident Response Dashboard
+                        <span class="text-xs font-mono font-normal px-2 py-0.5 rounded bg-surface2 text-muted border border-line">v2.0 Backend</span>
+                    </h1>
+                </div>
+            </div>
+
+            <!-- Header Controls -->
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2 text-xs font-mono text-muted bg-surface2 px-3 py-1.5 rounded-lg border border-line">
+                    <span id="service-status-dot" class="w-2 h-2 rounded-full bg-dim"></span>
+                    <span id="service-name-label">todo-app</span>
+                </div>
+
+                <div class="flex items-center gap-1.5 bg-surface2 p-1 rounded-lg border border-line text-xs font-mono">
+                    <button id="btn-refresh" onclick="loadAll()" class="px-2.5 py-1 rounded bg-surface hover:bg-surface3 text-text transition flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        Refresh
+                    </button>
+                    <button id="btn-toggle-timer" onclick="toggleAutoRefresh()" class="px-2 py-1 rounded text-dim hover:text-text transition">
+                        Auto: <span id="auto-status" class="text-accent font-bold">5s</span>
+                    </button>
+                </div>
+
+                <a href="/" class="text-xs font-medium px-3 py-1.5 rounded-lg bg-surface2 hover:bg-surface3 border border-line text-muted hover:text-text transition">
+                    Open Chat Copilot &rarr;
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full flex flex-col gap-6">
+
+        <!-- Telemetry Overview Cards -->
+        <section id="telemetry-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Service Health -->
+            <div class="bg-surface border border-line rounded-xl p-4 flex flex-col justify-between">
+                <span class="text-xs font-mono text-muted uppercase tracking-wider">Service Health</span>
+                <div class="flex items-baseline justify-between mt-2">
+                    <span id="health-value" class="text-2xl font-display font-bold text-text">Loading...</span>
+                    <span id="health-badge" class="px-2 py-0.5 text-xs font-mono rounded bg-surface2 text-muted">--</span>
+                </div>
+                <div id="health-detail" class="text-xs text-dim font-mono mt-1 truncate">Checking telemetry store...</div>
+            </div>
+
+            <!-- Active Incidents -->
+            <div class="bg-surface border border-line rounded-xl p-4 flex flex-col justify-between">
+                <span class="text-xs font-mono text-muted uppercase tracking-wider">Active Incidents</span>
+                <div class="flex items-baseline justify-between mt-2">
+                    <span id="active-inc-count" class="text-2xl font-display font-bold text-text">0</span>
+                    <span id="active-inc-badge" class="px-2 py-0.5 text-xs font-mono rounded bg-successSoft text-success border border-success/30">Stable</span>
+                </div>
+                <div id="total-inc-detail" class="text-xs text-dim font-mono mt-1">Total recorded: 0</div>
+            </div>
+
+            <!-- 5xx Error Rate -->
+            <div class="bg-surface border border-line rounded-xl p-4 flex flex-col justify-between">
+                <span class="text-xs font-mono text-muted uppercase tracking-wider">5xx Error Rate (5m)</span>
+                <div class="flex items-baseline justify-between mt-2">
+                    <span id="error-rate-value" class="text-2xl font-display font-bold text-text">0.0%</span>
+                    <span id="error-rate-badge" class="px-2 py-0.5 text-xs font-mono rounded bg-surface2 text-dim">0 / 0</span>
+                </div>
+                <div id="error-rate-detail" class="text-xs text-dim font-mono mt-1 truncate">No traffic anomalies</div>
+            </div>
+
+            <!-- p95 Latency -->
+            <div class="bg-surface border border-line rounded-xl p-4 flex flex-col justify-between">
+                <span class="text-xs font-mono text-muted uppercase tracking-wider">p95 Latency (5m)</span>
+                <div class="flex items-baseline justify-between mt-2">
+                    <span id="latency-value" class="text-2xl font-display font-bold text-text">0 ms</span>
+                    <span id="latency-badge" class="px-2 py-0.5 text-xs font-mono rounded bg-surface2 text-muted">nominal</span>
+                </div>
+                <div id="latency-detail" class="text-xs text-dim font-mono mt-1 truncate">Threshold: 1000ms</div>
+            </div>
+        </section>
+
+        <!-- Navigation Tabs -->
+        <div class="flex items-center justify-between border-b border-line pb-3">
+            <div class="flex items-center gap-2">
+                <button onclick="setTab('all')" id="tab-all" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium transition bg-accent text-bg font-semibold">
+                    All Incidents (<span id="count-all">0</span>)
+                </button>
+                <button onclick="setTab('active')" id="tab-active" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium transition text-muted hover:text-text hover:bg-surface2">
+                    Active Outages (<span id="count-active">0</span>)
+                </button>
+                <button onclick="setTab('resolved')" id="tab-resolved" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium transition text-muted hover:text-text hover:bg-surface2">
+                    Past Resolved (<span id="count-resolved">0</span>)
+                </button>
+                <button onclick="setTab('memory')" id="tab-memory" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium transition text-muted hover:text-text hover:bg-surface2">
+                    Hindsight Memory Bank (<span id="count-memory">0</span>)
+                </button>
+            </div>
+
+            <div class="text-xs font-mono text-dim" id="last-updated-text">
+                Last updated: Just now
+            </div>
+        </div>
+
+        <!-- Tab 1: Incidents List Section -->
+        <section id="view-incidents" class="flex-1 flex flex-col gap-3">
+            <div id="incidents-container" class="grid grid-cols-1 gap-3">
+                <!-- Incident cards dynamically injected here -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="incidents-empty" class="hidden text-center py-16 bg-surface/50 border border-line rounded-xl">
+                <div class="w-12 h-12 rounded-full bg-surface2 border border-line mx-auto flex items-center justify-center text-dim mb-3">
+                    <svg class="w-5 h-5 text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                </div>
+                <h3 class="font-display font-semibold text-text text-base">No incidents in this view</h3>
+                <p class="text-dim text-xs mt-1">The monitored services are operating normally with no matching records.</p>
+            </div>
+        </section>
+
+        <!-- Tab 2: Hindsight Memory Bank View -->
+        <section id="view-memory" class="hidden flex-1 flex flex-col gap-4">
+            <div class="bg-surface border border-line rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <h2 class="font-display font-bold text-sm text-text flex items-center gap-2">
+                        <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                        Hindsight Incident Memory Bank
+                        <span id="memory-bank-pill" class="px-2 py-0.5 text-xs font-mono rounded bg-accentSoft text-accent border border-accent/30">incident-response</span>
+                    </h2>
+                    <p class="text-xs text-dim mt-0.5">Persistent episodic memories, runtime contexts, and verified procedural fixes (and failed actions).</p>
+                </div>
+                <div id="memory-status-badge" class="px-3 py-1 rounded text-xs font-mono bg-surface2 text-muted">
+                    Checking...
+                </div>
+            </div>
+
+            <div id="memory-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                <!-- Memory items dynamically injected here -->
+            </div>
+
+            <div id="memory-empty" class="hidden text-center py-16 bg-surface/50 border border-line rounded-xl">
+                <div class="w-12 h-12 rounded-full bg-surface2 border border-line mx-auto flex items-center justify-center text-dim mb-3">
+                    <svg class="w-5 h-5 text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+                </div>
+                <h3 class="font-display font-semibold text-text text-base">No memory documents found</h3>
+                <p class="text-dim text-xs mt-1">Resolved incidents will appear here once retained into Hindsight.</p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Incident Detail Drawer / Modal -->
+    <div id="detail-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-surface border border-line rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="p-5 border-b border-line flex items-center justify-between bg-surface2/40">
+                <div class="flex items-center gap-3">
+                    <span id="modal-inc-id" class="font-mono font-bold text-lg text-accent">INC-0000</span>
+                    <span id="modal-inc-severity" class="px-2 py-0.5 text-xs font-mono font-semibold rounded bg-dangerSoft text-danger">CRITICAL</span>
+                    <span id="modal-inc-status" class="px-2 py-0.5 text-xs font-mono rounded bg-surface3 text-text">OPEN</span>
+                </div>
+                <button onclick="closeModal()" class="w-8 h-8 rounded-lg bg-surface2 hover:bg-surface3 flex items-center justify-center text-dim hover:text-text transition text-lg">
+                    &times;
+                </button>
+            </div>
+
+            <!-- Modal Content (Scrollable) -->
+            <div class="p-6 overflow-y-auto flex-1 flex flex-col gap-6 text-sm font-body">
+                <!-- Evidence Section -->
+                <div>
+                    <h4 class="text-xs font-mono uppercase tracking-wider text-muted mb-2">Breach Evidence</h4>
+                    <div id="modal-evidence" class="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                    </div>
+                </div>
+
+                <!-- Root Cause Diagnosis (RCA) -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-xs font-mono uppercase tracking-wider text-muted">Root Cause Analysis (RCA)</h4>
+                        <span id="modal-rca-status-badge" class="px-2 py-0.5 rounded text-[11px] font-mono bg-surface2 text-dim border border-line">PENDING</span>
+                    </div>
+                    <div id="modal-rca" class="bg-surface2/70 border border-line rounded-xl p-4 sm:p-5 text-sm rca-prose shadow-inner">
+                    </div>
+                </div>
+
+                <!-- Runtime Context & Proposed Action -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="bg-surface2 border border-line rounded-lg p-3">
+                        <span class="text-xs font-mono text-muted block mb-1">Proposed Action</span>
+                        <div id="modal-proposed-action" class="font-mono text-xs text-accent font-semibold">None</div>
+                    </div>
+                    <div class="bg-surface2 border border-line rounded-lg p-3">
+                        <span class="text-xs font-mono text-muted block mb-1">Runtime Context Sample</span>
+                        <div id="modal-context" class="font-mono text-xs text-text break-words max-h-24 overflow-y-auto">None recorded</div>
+                    </div>
+                </div>
+
+                <!-- Action Verification & Feedback Section -->
+                <div id="modal-feedback-section" class="bg-surface2/60 border border-line rounded-lg p-4 flex flex-col gap-3">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <span class="text-xs font-mono font-semibold text-text uppercase tracking-wider block">Procedural Fix Verification</span>
+                            <span class="text-xs text-dim">Confirm whether the remediation action successfully resolved the incident.</span>
+                        </div>
+                        <span id="modal-feedback-status" class="text-xs font-mono text-dim"></span>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <label for="modal-feedback-action" class="text-xs font-mono text-muted">Action taken:</label>
+                        <select id="modal-feedback-action" class="bg-surface3 border border-line text-text text-xs font-mono rounded px-2.5 py-1.5 focus:outline-none focus:border-accent">
+                            <option value="restart_worker">restart_worker</option>
+                            <option value="flush_pool">flush_pool</option>
+                            <option value="rollback_config">rollback_config</option>
+                            <option value="rollback_release">rollback_release</option>
+                            <option value="enable_fallback">enable_fallback</option>
+                        </select>
+                    </div>
+
+                    <div id="modal-feedback-buttons" class="flex items-center gap-3">
+                        <button onclick="submitFixFeedback(true)" class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-success text-bg font-mono font-semibold text-xs hover:bg-success/90 transition shadow-sm">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                            Fix Worked
+                        </button>
+                        <button onclick="submitFixFeedback(false)" class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-danger text-bg font-mono font-semibold text-xs hover:bg-danger/90 transition shadow-sm">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                            Fix Failed
+                        </button>
+                    </div>
+
+                    <div id="modal-feedback-msg" class="hidden text-xs font-mono p-2.5 rounded border"></div>
+                </div>
+
+                <!-- Timeline / Audit Trail -->
+                <div>
+                    <h4 class="text-xs font-mono uppercase tracking-wider text-muted mb-2">Timeline & Audit Events</h4>
+                    <div id="modal-timeline" class="space-y-2 border-l-2 border-line pl-4 ml-2">
+                        <!-- Timeline items injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-4 border-t border-line bg-surface2/30 flex justify-end">
+                <button onclick="closeModal()" class="px-4 py-2 rounded-lg bg-surface2 hover:bg-surface3 text-text text-xs font-mono transition">
+                    Close Dossier
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let currentTab = 'all';
+        let allIncidents = [];
+        let autoRefreshTimer = null;
+        let isAutoRefresh = true;
+
+        async function fetchJSON(path) {
+            const res = await fetch(API_BASE + path);
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            return await res.json();
+        }
+
+        function formatRelativeTime(ts) {
+            if (!ts) return 'N/A';
+            const diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+        }
+
+        function formatExactTime(ts) {
+            if (!ts) return 'N/A';
+            return new Date(ts).toLocaleString();
+        }
+
+        function escapeHtml(str) {
+            return (str || '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[c]));
+        }
+
+        function unpackLogLine(str) {
+            if (!str) return '';
+            let s = String(str).trim();
+            if (s.startsWith('`') && !s.slice(1).includes('`')) {
+                s = s.slice(1).trim();
+            }
+            const startIdx = s.indexOf('{');
+            if (startIdx !== -1) {
+                let msg = '';
+                let exc = '';
+                let lvl = '';
+                const endIdx = s.lastIndexOf('}');
+                if (endIdx > startIdx) {
+                    try {
+                        const jsonStr = s.slice(startIdx, endIdx + 1);
+                        const parsed = JSON.parse(jsonStr);
+                        if (typeof parsed === 'object' && parsed !== null) {
+                            msg = parsed.message || parsed.msg || '';
+                            exc = parsed.exception ? ` (${parsed.exception})` : '';
+                            lvl = parsed.level || '';
+                        }
+                    } catch (e) {}
+                }
+                if (!msg) {
+                    const msgMatch = s.match(/"(?:message|msg)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
+                    if (msgMatch) msg = msgMatch[1].replace(/\\"/g, '"');
+                    const excMatch = s.match(/"exception"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
+                    if (excMatch) exc = ` (${excMatch[1].replace(/\\"/g, '"')})`;
+                    const lvlMatch = s.match(/"level"\s*:\s*"([^"]+)"/);
+                    if (lvlMatch) lvl = lvlMatch[1];
+                }
+                if (msg) {
+                    let prefix = s.slice(0, startIdx).trim();
+                    prefix = prefix.replace(/(\s*\|\s*-\s*)+/g, ' ').replace(/\|\s*$/, '').trim();
+                    if (prefix) return `${prefix} | ${msg}${exc}`;
+                    return `${lvl ? `[${lvl}] ` : ''}${msg}${exc}`;
+                }
+            }
+            return s;
+        }
+
+        function stripMarkdown(raw) {
+            if (!raw) return '';
+            return String(raw)
+                .replace(/```[\s\S]*?```/g, ' ')
+                .replace(/###?\s*/g, '')
+                .replace(/\*\*([^*]+)\*\*/g, '$1')
+                .replace(/`([^`]+)`/g, '$1')
+                .replace(/^[-*•\d.]+\s*/gm, '')
+                .replace(/\n+/g, ' ')
+                .trim();
+        }
+
+        function formatEvidenceText(raw) {
+            if (!raw) return '';
+            let line = String(raw).trim();
+            const low = line.toLowerCase().replace(/[*_:`#]/g, '').trim();
+            if (low === 'logs' || low === 'evidence' || low === 'symptoms' || low === '') {
+                return '';
+            }
+            line = unpackLogLine(line);
+            line = line.replace(/^[-*•\d.]+\s*/, '');
+            return line.replace(/\*\*(.*?)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1').trim();
+        }
+
+        function formatEvidenceItem(raw) {
+            if (!raw) return '';
+            let line = String(raw).trim();
+            const low = line.toLowerCase().replace(/[*_:`#]/g, '').trim();
+            if (low === 'logs' || low === 'evidence' || low === 'symptoms' || low === '') {
+                return '';
+            }
+            line = unpackLogLine(line);
+            line = line.replace(/^[-*•\d.]+\s*/, '');
+
+            let html = escapeHtml(line);
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-accent font-semibold">$1</strong>');
+            html = html.replace(/`([^`]+)`/g, '<code class="bg-surface3 px-1.5 py-0.5 rounded text-accent text-[11px] font-mono border border-line/60">$1</code>');
+            return html;
+        }
+
+        function fallbackMarkdown(text) {
+            let html = escapeHtml(text);
+
+            // Fenced code blocks
+            html = html.replace(/```(?:([a-zA-Z0-9_-]+)\n)?([\s\S]*?)```/g, (_, lang, code) => {
+                return `<pre><code class="language-${lang || 'text'}">${(code || '').trim()}</code></pre>`;
+            });
+
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Headers
+            html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+            html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+            html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+            // Bold & Italic
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+            // Blockquotes
+            html = html.replace(/^>\s*(.*$)/gim, '<blockquote>$1</blockquote>');
+
+            // Lists
+            const lines = html.split('\n');
+            let inList = false;
+            const processed = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const listMatch = line.match(/^(\s*)[-*•]\s+(.*)$/);
+                if (listMatch) {
+                    if (!inList) {
+                        processed.push('<ul>');
+                        inList = true;
+                    }
+                    processed.push(`<li>${listMatch[2]}</li>`);
+                } else {
+                    if (inList) {
+                        processed.push('</ul>');
+                        inList = false;
+                    }
+                    processed.push(line);
+                }
+            }
+            if (inList) processed.push('</ul>');
+
+            // Paragraphs & Line breaks
+            html = processed.map(line => {
+                if (line.startsWith('<h') || line.startsWith('<pre') || line.startsWith('</pre>') ||
+                    line.startsWith('<ul') || line.startsWith('</ul') || line.startsWith('<li') ||
+                    line.startsWith('<blockquote') || line.startsWith('</blockquote') ||
+                    line.trim() === '') {
+                    return line;
+                }
+                return `<p>${line}</p>`;
+            }).join('\n');
+
+            return html;
+        }
+
+        function renderMarkdown(raw) {
+            if (!raw) return '';
+            // Unpack any embedded json logs inside raw text lines
+            const clean = raw.split('\n').map(line => unpackLogLine(line)).join('\n');
+
+            if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
+                try {
+                    marked.setOptions({
+                        breaks: true,
+                        gfm: true,
+                    });
+                    return marked.parse(clean);
+                } catch (e) {
+                    console.warn('marked.parse failed, falling back', e);
+                }
+            }
+            return fallbackMarkdown(clean);
+        }
+
+        // ── Load Telemetry Overview ──────────────────────────────────────────────
+        async function loadTelemetry() {
+            try {
+                const data = await fetchJSON('/api/telemetry/overview');
+                document.getElementById('service-name-label').textContent = data.service || 'todo-app';
+
+                // Health card
+                const hVal = document.getElementById('health-value');
+                const hBadge = document.getElementById('health-badge');
+                const hDetail = document.getElementById('health-detail');
+                const statusDot = document.getElementById('service-status-dot');
+
+                const status = (data.health.status || 'unknown').toLowerCase();
+                hVal.textContent = status.toUpperCase();
+                hBadge.textContent = status;
+                hDetail.textContent = data.health.service ? `${data.health.service} traffic monitored` : 'No errors';
+
+                if (status === 'up') {
+                    hBadge.className = 'px-2 py-0.5 text-xs font-mono rounded bg-successSoft text-success border border-success/30';
+                    statusDot.className = 'w-2 h-2 rounded-full bg-success pulse-dot';
+                } else if (status === 'idle') {
+                    hBadge.className = 'px-2 py-0.5 text-xs font-mono rounded bg-warningSoft text-warning border border-warning/30';
+                    statusDot.className = 'w-2 h-2 rounded-full bg-warning';
+                } else {
+                    hBadge.className = 'px-2 py-0.5 text-xs font-mono rounded bg-dangerSoft text-danger border border-danger/30';
+                    statusDot.className = 'w-2 h-2 rounded-full bg-danger pulse-dot';
+                }
+
+                // Active Incidents
+                document.getElementById('active-inc-count').textContent = data.active_incidents;
+                document.getElementById('total-inc-detail').textContent = `Total recorded: ${data.total_incidents}`;
+                const actBadge = document.getElementById('active-inc-badge');
+                if (data.active_incidents > 0) {
+                    actBadge.textContent = `${data.active_incidents} Active`;
+                    actBadge.className = 'px-2 py-0.5 text-xs font-mono rounded bg-dangerSoft text-danger border border-danger/30 font-semibold';
+                } else {
+                    actBadge.textContent = 'Stable';
+                    actBadge.className = 'px-2 py-0.5 text-xs font-mono rounded bg-successSoft text-success border border-success/30';
+                }
+
+                // Error Rate
+                const errPct = (data.error_rate.error_percentage || 0).toFixed(1);
+                document.getElementById('error-rate-value').textContent = `${errPct}%`;
+                document.getElementById('error-rate-badge').textContent = `${data.error_rate.error_request_count || 0} / ${data.error_rate.total_request_count || 0}`;
+                document.getElementById('error-rate-detail').textContent = `${data.error_rate.total_request_count || 0} reqs in 5m`;
+
+                // Latency
+                const p95 = Math.round(data.latency.max_p95_duration_ms || 0);
+                document.getElementById('latency-value').textContent = `${p95} ms`;
+                const latBadge = document.getElementById('latency-badge');
+                if (p95 > 1000) {
+                    latBadge.className = 'px-2 py-0.5 text-xs font-mono rounded bg-dangerSoft text-danger border border-danger/30';
+                    latBadge.textContent = 'high';
+                } else {
+                    latBadge.className = 'px-2 py-0.5 text-xs font-mono rounded bg-surface2 text-dim';
+                    latBadge.textContent = 'nominal';
+                }
+            } catch (err) {
+                console.error("Telemetry load failed:", err);
+            }
+        }
+
+        // ── Load Incidents ───────────────────────────────────────────────────────
+        async function loadIncidents() {
+            try {
+                allIncidents = await fetchJSON('/api/incidents');
+                renderIncidents();
+            } catch (err) {
+                console.error("Incidents load failed:", err);
+            }
+        }
+
+        function renderIncidents() {
+            const container = document.getElementById('incidents-container');
+            const emptyEl = document.getElementById('incidents-empty');
+            container.innerHTML = '';
+
+            let filtered = allIncidents;
+            if (currentTab === 'active') {
+                filtered = allIncidents.filter(i => i.status !== 'RESOLVED' && i.status !== 'SUPPRESSED');
+            } else if (currentTab === 'resolved') {
+                filtered = allIncidents.filter(i => i.status === 'RESOLVED');
+            }
+
+            // Update Counts
+            const activeCount = allIncidents.filter(i => i.status !== 'RESOLVED' && i.status !== 'SUPPRESSED').length;
+            const resolvedCount = allIncidents.filter(i => i.status === 'RESOLVED').length;
+            document.getElementById('count-all').textContent = allIncidents.length;
+            document.getElementById('count-active').textContent = activeCount;
+            document.getElementById('count-resolved').textContent = resolvedCount;
+
+            if (filtered.length === 0) {
+                emptyEl.classList.remove('hidden');
+                return;
+            }
+            emptyEl.classList.add('hidden');
+
+            filtered.forEach(inc => {
+                const card = document.createElement('div');
+                card.className = "bg-surface border border-line hover:border-line/80 rounded-xl p-5 cursor-pointer transition hover:bg-surface/90 flex flex-col gap-3 group";
+                card.onclick = () => openDetailModal(inc.id);
+
+                const isResolved = inc.status === 'RESOLVED';
+                const isCrit = inc.severity === 'critical';
+
+                const statusBadge = isResolved
+                    ? '<span class="px-2.5 py-0.5 rounded text-xs font-mono bg-successSoft text-success border border-success/30 font-semibold">RESOLVED</span>'
+                    : `<span class="px-2.5 py-0.5 rounded text-xs font-mono bg-dangerSoft text-danger border border-danger/30 font-semibold flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-danger pulse-dot"></span>${inc.status}</span>`;
+
+                const sevBadge = isCrit
+                    ? '<span class="px-2 py-0.5 rounded text-xs font-mono bg-dangerSoft text-danger border border-danger/30">CRITICAL</span>'
+                    : '<span class="px-2 py-0.5 rounded text-xs font-mono bg-warningSoft text-warning border border-warning/30">WARNING</span>';
+
+                const cleanEvidenceList = (inc.evidence && inc.evidence.length > 0)
+                    ? inc.evidence.map(formatEvidenceText).filter(Boolean)
+                    : [];
+                const evidenceText = cleanEvidenceList.length > 0
+                    ? cleanEvidenceList.join(' &bull; ')
+                    : 'Telemetry breach detected';
+
+                const rcaSnippet = inc.rca_text
+                    ? `<div class="bg-surface2 border border-line/60 rounded-lg p-2.5 text-xs font-mono text-muted truncate">
+                         <span class="text-accent font-semibold">RCA:</span> ${escapeHtml(stripMarkdown(inc.rca_text))}
+                       </div>`
+                    : '<div class="text-xs font-mono text-dim italic">Diagnosis pending analysis...</div>';
+
+                const fixPill = inc.proposed_action
+                    ? `<span class="px-2 py-0.5 rounded bg-accentSoft text-accent border border-accent/30 text-xs font-mono">Proposed: ${inc.proposed_action}</span>`
+                    : '';
+
+                card.innerHTML = `
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                            <span class="font-mono font-bold text-accent text-sm">${inc.id}</span>
+                            ${statusBadge}
+                            ${sevBadge}
+                            <span class="text-xs font-mono text-dim border-l border-line pl-2.5">${inc.service}</span>
+                        </div>
+                        <div class="text-xs font-mono text-dim whitespace-nowrap">
+                            Opened ${formatRelativeTime(inc.opened_at)}
+                        </div>
+                    </div>
+
+                    <div class="text-xs font-mono text-text flex items-center gap-2">
+                        <span class="text-danger">&bull;</span>
+                        <span class="truncate">${evidenceText}</span>
+                    </div>
+
+                    ${rcaSnippet}
+
+                    <div class="flex items-center justify-between border-t border-line/50 pt-2.5 mt-1 text-xs font-mono text-dim">
+                        <div class="flex items-center gap-2">
+                            ${fixPill}
+                            <span>Fingerprint: <code class="text-muted">${inc.fingerprint ? inc.fingerprint.slice(0, 10) : 'none'}</code></span>
+                        </div>
+                        <span class="text-accent group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                            Inspect Dossier &rarr;
+                        </span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function toggleMemoryNarrative(narrativeId, fadeId, btnId) {
+            const el = document.getElementById(narrativeId);
+            const fade = document.getElementById(fadeId);
+            const btn = document.getElementById(btnId);
+            if (!el) return;
+
+            const isCollapsed = el.classList.contains('max-h-28');
+            if (isCollapsed) {
+                el.classList.remove('max-h-28');
+                el.classList.add('max-h-none');
+                if (fade) fade.classList.add('hidden');
+                if (btn) btn.innerHTML = '<span>Show less</span> ▴';
+            } else {
+                el.classList.remove('max-h-none');
+                el.classList.add('max-h-28');
+                if (fade) fade.classList.remove('hidden');
+                if (btn) btn.innerHTML = '<span>Show full narrative</span> ▾';
+            }
+        }
+
+        // ── Load Hindsight Memories ──────────────────────────────────────────────
+        async function loadMemories() {
+            try {
+                const data = await fetchJSON('/api/memory/past-incidents');
+                document.getElementById('count-memory').textContent = data.total;
+                document.getElementById('memory-bank-pill').textContent = data.bank_id;
+
+                const statusEl = document.getElementById('memory-status-badge');
+                if (data.enabled) {
+                    statusEl.className = 'px-3 py-1 rounded text-xs font-mono bg-successSoft text-success border border-success/30';
+                    statusEl.textContent = 'Hindsight Online';
+                } else {
+                    statusEl.className = 'px-3 py-1 rounded text-xs font-mono bg-surface2 text-dim';
+                    statusEl.textContent = 'DB Historical Store';
+                }
+
+                const container = document.getElementById('memory-cards-container');
+                const emptyEl = document.getElementById('memory-empty');
+                container.innerHTML = '';
+
+                if (data.memories.length === 0) {
+                    emptyEl.classList.remove('hidden');
+                    return;
+                }
+                emptyEl.classList.add('hidden');
+
+                data.memories.forEach((m, idx) => {
+                    const card = document.createElement('div');
+                    card.className = "bg-surface border border-line rounded-xl p-4 flex flex-col justify-between gap-3";
+
+                    const fixBadge = m.fix
+                        ? `<span class="px-2 py-0.5 rounded text-xs font-mono bg-successSoft text-success border border-success/30 font-semibold">Verified Fix: ${escapeHtml(m.fix)}</span>`
+                        : '<span class="px-2 py-0.5 rounded text-xs font-mono bg-surface2 text-dim">No fix tag</span>';
+
+                    const failedBadges = (m.failed && m.failed.length > 0)
+                        ? m.failed.map(f => `<span class="px-2 py-0.5 rounded text-xs font-mono bg-dangerSoft text-danger line-through border border-danger/30">${escapeHtml(f)}</span>`).join(' ')
+                        : '';
+
+                    const narrativeText = (m.narrative || '').trim();
+                    const isLong = narrativeText.length > 180 || narrativeText.includes('\n');
+                    const narrativeId = `mem-narrative-${idx}`;
+                    const fadeId = `mem-fade-${idx}`;
+                    const btnId = `mem-btn-${idx}`;
+
+                    let narrativeHtml = '';
+                    if (isLong) {
+                        narrativeHtml = `
+                            <div class="flex flex-col gap-1.5 flex-1">
+                                <div id="${narrativeId}" class="relative max-h-28 overflow-hidden transition-all duration-200 cursor-pointer group" onclick="toggleMemoryNarrative('${narrativeId}', '${fadeId}', '${btnId}')" title="Click to expand/collapse">
+                                    <p class="text-xs font-mono text-text leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(narrativeText)}</p>
+                                    <div id="${fadeId}" class="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-surface to-transparent pointer-events-none"></div>
+                                </div>
+                                <button id="${btnId}" type="button" onclick="toggleMemoryNarrative('${narrativeId}', '${fadeId}', '${btnId}')" class="self-start text-[11px] font-mono text-accent hover:underline flex items-center gap-1 mt-0.5 focus:outline-none cursor-pointer">
+                                    <span>Show full narrative</span> ▾
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        narrativeHtml = `<p class="text-xs font-mono text-text leading-relaxed whitespace-pre-wrap break-words flex-1">${escapeHtml(narrativeText)}</p>`;
+                    }
+
+                    card.innerHTML = `
+                        <div class="flex items-center justify-between border-b border-line pb-2">
+                            <span class="font-mono font-bold text-accent text-xs">${escapeHtml(m.incident_id)}</span>
+                            <span class="text-xs font-mono text-dim">Source: ${escapeHtml(m.source || 'live')}</span>
+                        </div>
+                        ${narrativeHtml}
+                        <div class="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-line">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                ${fixBadge}
+                                ${failedBadges}
+                            </div>
+                            <span class="text-xs font-mono text-dim">Score: ${m.score ? m.score.toFixed(2) : '1.0'}</span>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (err) {
+                console.error("Memories load failed:", err);
+            }
+        }
+
+        let currentModalIncident = null;
+
+        // ── Incident Detail Modal ────────────────────────────────────────────────
+        async function openDetailModal(id) {
+            try {
+                const inc = await fetchJSON(`/api/incidents/${id}`);
+                currentModalIncident = inc;
+
+                document.getElementById('modal-inc-id').textContent = inc.id;
+                document.getElementById('modal-inc-severity').textContent = inc.severity.toUpperCase();
+                document.getElementById('modal-inc-status').textContent = inc.status;
+
+                const propActionEl = document.getElementById('modal-proposed-action');
+                if (inc.proposed_action) {
+                    propActionEl.innerHTML = `<span class="px-2 py-0.5 rounded bg-accentSoft text-accent border border-accent/30 font-mono text-xs font-semibold">${escapeHtml(inc.proposed_action)}</span>`;
+                } else {
+                    propActionEl.innerHTML = '<span class="text-dim text-xs font-mono">none</span>';
+                }
+
+                const ctxRaw = inc.context_sample || 'None observed in logs';
+                document.getElementById('modal-context').textContent = unpackLogLine(ctxRaw);
+
+                // Verification Feedback Section State
+                const fbBtns = document.getElementById('modal-feedback-buttons');
+                const fbMsg = document.getElementById('modal-feedback-msg');
+                const actionSelect = document.getElementById('modal-feedback-action');
+                if (actionSelect) {
+                    actionSelect.innerHTML = '';
+                    // Fetch allowed actions dynamically from the server
+                    let allowedActions = [];
+                    try {
+                        const metaRes = await fetch('/api/meta/allowed-actions');
+                        const metaData = await metaRes.json();
+                        allowedActions = metaData.allowed_actions || [];
+                    } catch (_) {
+                        // If the meta endpoint fails, fall back to an empty list
+                        allowedActions = [];
+                    }
+                    const proposed = (inc.proposed_action || '').trim().toLowerCase();
+                    const hasValidProposed = proposed && proposed !== 'none' && proposed !== 'null';
+
+                    if (hasValidProposed) {
+                        const opt = document.createElement('option');
+                        opt.value = proposed;
+                        opt.textContent = `★ Proposed: ${proposed}`;
+                        opt.selected = true;
+                        actionSelect.appendChild(opt);
+                    } else {
+                        const opt = document.createElement('option');
+                        opt.value = '';
+                        opt.textContent = '-- Select Remediation Action --';
+                        opt.disabled = true;
+                        opt.selected = true;
+                        actionSelect.appendChild(opt);
+                    }
+
+                    allowedActions.forEach(act => {
+                        if (act !== proposed) {
+                            const opt = document.createElement('option');
+                            opt.value = act;
+                            opt.textContent = act;
+                            actionSelect.appendChild(opt);
+                        }
+                    });
+
+                    actionSelect.disabled = false;
+                }
+
+                const hasVerifiedFix = (inc.actions || []).some(a => a.worked === true);
+                if (inc.status === 'RESOLVED' && hasVerifiedFix) {
+                    if (actionSelect) actionSelect.disabled = true;
+                    fbBtns.classList.add('hidden');
+                    fbMsg.classList.remove('hidden');
+                    fbMsg.className = 'text-xs font-mono p-2.5 rounded border bg-successSoft text-success border-success/30';
+                    fbMsg.textContent = 'Incident is resolved with verified fix recorded in Hindsight.';
+                } else {
+                    if (actionSelect) actionSelect.disabled = false;
+                    fbBtns.classList.remove('hidden');
+                    fbMsg.classList.add('hidden');
+                    fbMsg.textContent = '';
+                }
+
+                // Evidence
+                const evContainer = document.getElementById('modal-evidence');
+                evContainer.innerHTML = '';
+                const cleanEvidence = (inc.evidence && inc.evidence.length > 0)
+                    ? inc.evidence.map(formatEvidenceItem).filter(Boolean)
+                    : [];
+                if (cleanEvidence.length > 0) {
+                    cleanEvidence.forEach(itemHtml => {
+                        const d = document.createElement('div');
+                        d.className = 'flex items-start gap-2.5 bg-surface2/80 border border-line/80 rounded-lg p-2.5 text-xs font-mono text-text shadow-sm';
+                        d.innerHTML = `
+                            <span class="text-accent mt-0.5 text-xs font-bold leading-none">&bull;</span>
+                            <div class="flex-1 break-words leading-relaxed">${itemHtml}</div>
+                        `;
+                        evContainer.appendChild(d);
+                    });
+                } else {
+                    evContainer.innerHTML = '<div class="text-xs font-mono text-dim p-2.5 bg-surface2/50 rounded-lg border border-line/50">No evidence entries recorded.</div>';
+                }
+
+                // RCA Status Badge
+                const rcaStatusEl = document.getElementById('modal-rca-status-badge');
+                if (rcaStatusEl) {
+                    const st = inc.rca_status || 'pending';
+                    rcaStatusEl.textContent = st.toUpperCase();
+                    if (st === 'ok') {
+                        rcaStatusEl.className = 'px-2 py-0.5 rounded text-[11px] font-mono bg-successSoft text-success border border-success/30 font-semibold';
+                    } else if (st === 'pending') {
+                        rcaStatusEl.className = 'px-2 py-0.5 rounded text-[11px] font-mono bg-warningSoft text-warning border border-warning/30';
+                    } else {
+                        rcaStatusEl.className = 'px-2 py-0.5 rounded text-[11px] font-mono bg-dangerSoft text-danger border border-danger/30';
+                    }
+                }
+
+                // RCA
+                const rcaEl = document.getElementById('modal-rca');
+                if (inc.rca_text && inc.rca_text.trim()) {
+                    rcaEl.innerHTML = renderMarkdown(inc.rca_text);
+                } else {
+                    rcaEl.innerHTML = '<div class="text-xs font-mono text-dim italic">Diagnosis pending analysis...</div>';
+                }
+
+                // Timeline
+                const tlContainer = document.getElementById('modal-timeline');
+                tlContainer.innerHTML = '';
+                if (inc.timeline && inc.timeline.length > 0) {
+                    inc.timeline.forEach(t => {
+                        const item = document.createElement('div');
+                        item.className = "relative flex flex-col gap-0.5 text-xs font-mono";
+                        item.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-accent">${t.kind}</span>
+                                <span class="text-dim">by ${t.actor}</span>
+                                <span class="text-dim text-[11px]">${formatExactTime(t.ts)}</span>
+                            </div>
+                            ${t.detail ? `<span class="text-muted text-[11px] pl-2 border-l border-line/60">${t.detail}</span>` : ''}
+                        `;
+                        tlContainer.appendChild(item);
+                    });
+                } else {
+                    tlContainer.innerHTML = '<span class="text-xs font-mono text-dim">No lifecycle events recorded.</span>';
+                }
+
+                document.getElementById('detail-modal').classList.remove('hidden');
+            } catch (err) {
+                alert(`Could not load incident details: ${err.message}`);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
+        }
+
+        async function submitFixFeedback(worked) {
+            if (!currentModalIncident) return;
+            const actionSelect = document.getElementById('modal-feedback-action');
+            const action = (actionSelect && actionSelect.value) ? actionSelect.value : (currentModalIncident.proposed_action || '');
+            const fbBtns = document.getElementById('modal-feedback-buttons');
+            const fbMsg = document.getElementById('modal-feedback-msg');
+
+            if (!action) {
+                alert('Please select a remediation action before submitting feedback.');
+                return;
+            }
+
+            // Temporarily disable buttons
+            fbBtns.querySelectorAll('button').forEach(b => b.disabled = true);
+
+            try {
+                const res = await fetch(`/api/incidents/${currentModalIncident.id}/feedback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: action,
+                        worked: worked,
+                        notes: worked ? "Verified via dashboard UI" : "Fix failed to mitigate breach"
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+
+                const data = await res.json();
+
+                // Refresh modal details
+                await openDetailModal(currentModalIncident.id);
+
+                fbMsg.classList.remove('hidden');
+                if (worked) {
+                    fbMsg.className = 'text-xs font-mono p-2.5 rounded border bg-successSoft text-success border-success/30';
+                    fbMsg.textContent = `Fix verified. Status transitioned to RESOLVED. Procedural fix retained into Hindsight (tag: fix:${action}).`;
+                } else {
+                    fbMsg.className = 'text-xs font-mono p-2.5 rounded border bg-warningSoft text-warning border-warning/30';
+                    fbMsg.textContent = `Failure recorded into Hindsight (tag: failed:${action}). Next recommended action: ${data.new_recommendation || data.next_action || 'escalate_to_human'}`;
+                }
+
+                // Refresh incident lists and telemetry overview
+                loadAll();
+            } catch (err) {
+                fbMsg.classList.remove('hidden');
+                fbMsg.className = 'text-xs font-mono p-2.5 rounded border bg-dangerSoft text-danger border-danger/30';
+                fbMsg.textContent = `Error recording feedback: ${err.message}`;
+            } finally {
+                fbBtns.querySelectorAll('button').forEach(b => b.disabled = false);
+            }
+        }
+
+        // Close on ESC
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // ── Tab Navigation ───────────────────────────────────────────────────────
+        function setTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.className = 'tab-btn px-3 py-1.5 rounded-lg text-sm font-medium transition text-muted hover:text-text hover:bg-surface2';
+            });
+            const activeBtn = document.getElementById(`tab-${tab}`);
+            if (activeBtn) {
+                activeBtn.className = 'tab-btn px-3 py-1.5 rounded-lg text-sm font-medium transition bg-accent text-bg font-semibold';
+            }
+
+            if (tab === 'memory') {
+                document.getElementById('view-incidents').classList.add('hidden');
+                document.getElementById('view-memory').classList.remove('hidden');
+                loadMemories();
+            } else {
+                document.getElementById('view-memory').classList.add('hidden');
+                document.getElementById('view-incidents').classList.remove('hidden');
+                renderIncidents();
+            }
+        }
+
+        // The tab label shows the memory count even while another tab is open. The endpoint queries Hindsight, so off the
+        // memory tab it is refreshed at most every 30 s and only the count is touched.
+        let lastMemoryCountAt = 0;
+        async function loadMemoryCount() {
+            lastMemoryCountAt = Date.now();
+            try {
+                const data = await fetchJSON('/api/memory/past-incidents');
+                document.getElementById('count-memory').textContent = data.total;
+            } catch (err) { /* leave the previous count */ }
+        }
+
+        // ── Global Load & Auto-Refresh ───────────────────────────────────────────
+        async function loadAll() {
+            await Promise.all([loadTelemetry(), loadIncidents()]);
+            if (currentTab === 'memory') {
+                await loadMemories();
+                lastMemoryCountAt = Date.now();
+            } else if (Date.now() - lastMemoryCountAt > 30000) {
+                await loadMemoryCount();
+            }
+            document.getElementById('last-updated-text').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function toggleAutoRefresh() {
+            isAutoRefresh = !isAutoRefresh;
+            document.getElementById('auto-status').textContent = isAutoRefresh ? '5s' : 'OFF';
+            document.getElementById('auto-status').className = isAutoRefresh ? 'text-accent font-bold' : 'text-dim';
+            if (isAutoRefresh) {
+                startTimer();
+            } else if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+            }
+        }
+
+        function startTimer() {
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+            autoRefreshTimer = setInterval(() => {
+                if (isAutoRefresh) loadAll();
+            }, 5000);
+        }
+
+        // Initial Load
+        loadAll();
+        startTimer();
+    </script>
+</body>
+</html>

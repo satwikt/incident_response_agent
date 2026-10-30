@@ -14,16 +14,37 @@ import asyncio
 import logging
 from typing import Optional
 
-from google.adk.agents.run_config import RunConfig
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai.types import Content, Part
+try:
+    from google.adk.agents.run_config import RunConfig
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai.types import Content, Part
+except ImportError:
+    class RunConfig:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class InMemorySessionService:  # type: ignore
+        pass
+
+    class Runner:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class Content:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class Part:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
 
 from db import events as store
 
 from . import config, cycle
 from .agent import root_agent, verifier_agent
 from .diagnosis import DiagnosisResult, DiagnosisService
+from .llm import clean_agent_output
 from .thresholds import thresholds
 
 log = logging.getLogger("copilot.watcher")
@@ -49,8 +70,13 @@ async def _generate_rca(prompt: str, runner=None, app_name: str = "incident_copi
         if usage and getattr(usage, "total_token_count", None):
             tokens += usage.total_token_count
         if event.is_final_response() and content and content.parts:
-            parts.extend(p.text for p in content.parts if getattr(p, "text", None))
-    return DiagnosisResult(text="\n".join(parts), llm_calls=calls or None, tokens=tokens or None)
+            parts.extend(
+                str(p.text)
+                for p in content.parts
+                if getattr(p, "text", None) and getattr(p, "thought", None) is not True
+            )
+    cleaned_text = clean_agent_output("\n".join(parts))
+    return DiagnosisResult(text=cleaned_text, llm_calls=calls or None, tokens=tokens or None)
 
 
 async def _verify_rca(prompt: str) -> DiagnosisResult:

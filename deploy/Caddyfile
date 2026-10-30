@@ -1,0 +1,20 @@
+# Public entry points for the hosted demo. DEMO_DOMAIN must resolve to this VM (a free option: <ip-with-dashes>.sslip.io).
+# Set DEMO_DOMAIN=:80 to serve plain HTTP on a bare IP for a private smoke test (no certificate is requested).
+
+{$DEMO_DOMAIN} {
+	encode zstd gzip
+
+	# The telemetry ingest API is for the adapter inside the Docker network only. Its keys are not secrets worth guarding
+	# publicly, so never expose it: anyone could post fake events.
+	@ingest path /ingest/*
+	respond @ingest "Not found" 404
+
+	# Copilot: chat (/), incident dashboard (/dashboard) and their APIs.
+	reverse_proxy copilot:8001
+}
+
+# Shop + faults deck (/faults). Fault changes need the demo's CHAOS_KEY; the page asks for it.
+{$DEMO_DOMAIN}:8443 {
+	encode zstd gzip
+	reverse_proxy frontend:8080
+}

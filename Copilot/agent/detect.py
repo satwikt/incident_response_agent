@@ -9,12 +9,12 @@ from dataclasses import dataclass
 from typing import List, Optional, Set
 
 # Highest priority first: decides which breach names an incident.
-KIND_PRIORITY = {"health": 0, "error_rate": 1, "latency": 2, "slow": 3, "keyword": 4}
+KIND_PRIORITY = {"health": 0, "error_rate": 1, "latency": 2, "slow": 3, "keyword": 4, "exception": 5, "resource": 6}
 
 
 @dataclass(frozen=True)
 class Breach:
-    kind: str                # health | error_rate | latency | slow | keyword
+    kind: str                # health | error_rate | latency | slow | keyword | exception | resource
     route: Optional[str]     # None for service-wide breaches
     text: str
 
@@ -23,7 +23,8 @@ class Breach:
 
 
 def find_breaches(health: dict, error_data: dict, latency_data: dict, slow_data: dict, logs_data: dict,
-                  t) -> List[Breach]:
+                  t, resource_data: Optional[dict] = None,
+                  error_log_data: Optional[dict] = None) -> List[Breach]:
     """Return structured breaches (empty list means all clear). ``t`` is a WatcherThresholds-like object."""
     out: List[Breach] = []
     w = f" [window {t.log_scan_minutes:g}m]"
@@ -54,6 +55,25 @@ def find_breaches(health: dict, error_data: dict, latency_data: dict, slow_data:
         out.append(Breach("keyword", None,
                           f"{matches} event(s) matched keywords '{logs_data.get('keyword', '')}' "
                           f"in the last {t.log_scan_minutes:g}m"))
+
+    # The application reporting failures in its own logs (exceptions, ERROR lines) without a failing request to count.
+    min_logs = getattr(t, "error_log_count", 0) or 0
+    n_err = (error_log_data or {}).get("count", 0)
+    if min_logs > 0 and n_err >= min_logs:
+        first = ((error_log_data or {}).get("sample_lines") or [""])[0]
+        out.append(Breach("exception", None,
+                          f"{n_err} application error/exception log line(s) in the last {t.log_scan_minutes:g}m "
+                          f"(threshold {min_logs}), latest: {first[:160]}"))
+
+    # Resource pressure (e.g. a memory leak) raises no error until the process dies, so it is judged on its own signal.
+    limit = getattr(t, "memory_alert_mb", 0) or 0
+    if limit > 0:
+        for p in (resource_data or {}).get("processes", []) or []:
+            mb = p.get("rss_mb")
+            if mb is not None and mb >= limit:
+                out.append(Breach("resource", None,
+                                  f"Memory of '{p.get('name', 'process')}' is {mb:.0f}MB "
+                                  f"(threshold {limit:g}MB), consistent with a memory leak"))
     return out
 
 
@@ -87,7 +107,8 @@ def healthy_routes(error_data: dict, latency_data: dict, slow_data: dict, t, clo
     return ok
 
 
-def build_summary(health: dict, error_data: dict, latency_data: dict, slow_data: dict, logs_data: dict) -> str:
+def build_summary(health: dict, error_data: dict, latency_data: dict, slow_data: dict, logs_data: dict,
+                  traces_data: Optional[dict] = None) -> str:
     """Concise plain-text telemetry snapshot for the agent prompt (log text is quoted, not interpreted)."""
     lines = [f"Health: {health.get('status', 'unknown')}",
              f"Requests: {error_data.get('total_request_count', 'N/A')}, 5xx: {error_data.get('total_error_count', 'N/A')}"]
@@ -97,6 +118,10 @@ def build_summary(health: dict, error_data: dict, latency_data: dict, slow_data:
         lines.append(f"  Route {r['route']}: p95={r.get('p95_latency_ms')}ms")
     lines.append(f"Slow requests: {slow_data.get('slow_count', 0)}")
     lines.append(f"Keyword matches: {logs_data.get('match_count', 0)} (keyword: {logs_data.get('keyword', '')})")
-    for s in (logs_data.get("sample_lines", []) or [])[:3]:
-        lines.append(f"  Event (untrusted text): {s[:140]}")
+    for s in (logs_data.get("sample_lines", []) or [])[:10]:
+        lines.append(f"  Event (untrusted text): {s[:200]}")
+    if traces_data and traces_data.get("sample_lines"):
+        lines.append(f"Recent traces: {traces_data.get('match_count', len(traces_data['sample_lines']))}")
+        for t_line in traces_data["sample_lines"][:5]:
+            lines.append(f"  Trace: {t_line[:200]}")
     return "\n".join(lines)

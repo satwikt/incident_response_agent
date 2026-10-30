@@ -60,8 +60,8 @@ def test_plain_gemini_names_are_returned_as_strings(monkeypatch):
 
 def test_default_model_when_nothing_is_configured(monkeypatch):
     monkeypatch.delenv("AGENT_MODEL", raising=False)
-    monkeypatch.delenv("GEMINI_MODEL", raising=False)
-    assert build_model() == "gemini-3.5-flash"
+    monkeypatch.setattr("agent.llm.build_nemotron_model", lambda tier: f"nemotron-{tier}")
+    assert build_model() == "nemotron-super"
 
 
 def test_litellm_defaults_keep_diagnoses_small_and_tolerate_unsupported_params(monkeypatch):

@@ -8,6 +8,7 @@ once the diagnosis (real or templated) is stored.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any, Callable, List, Optional
 
@@ -49,7 +50,7 @@ def _enrich(match: memmod.Recalled) -> dict:
         d["context"] = local.get("context_sample") or ""
         d["evidence"] = local.get("evidence") or []
         if not d["fix"] and local.get("actions"):
-            d["fix"], failed = memmod.split_actions(local["actions"], set(config.ALLOWED_ACTIONS))
+            d["fix"], failed = memmod.split_actions(local["actions"], None)
             d["failed"] = d["failed"] or failed
     return d
 
@@ -78,6 +79,7 @@ def incident_config() -> IncidentConfig:
         recurrence_window_ms=int(config.RECURRENCE_WINDOW_HOURS * 3_600_000),
         renotify_ms=int(config.RENOTIFY_MINUTES * 60_000),
         max_open=config.MAX_OPEN_INCIDENTS,
+        resolve_grace_ms=int(config.RESOLVE_GRACE_S * 1000),
     )
 
 
@@ -89,6 +91,9 @@ def collect(window: float) -> dict:
         "latency": tools.get_latency(window),
         "slow": tools.get_slow_requests(thresholds.slow_request_min_ms, window),
         "logs": tools.get_recent_logs(",".join(thresholds.log_keywords), thresholds.log_scan_limit, window),
+        "traces": tools.get_traces(window, limit=5),
+        "resource": tools.get_resource_usage(),
+        "error_logs": tools.get_error_logs(window),
     }
 
 
@@ -102,7 +107,8 @@ def signature_for(window: float, now: Optional[int] = None) -> Callable[[Optiona
 
 def run_cycle(data: dict, window: float, now: int, cfg: Optional[IncidentConfig] = None) -> List[Action]:
     """Detect breaches in ``data`` and update incident state. Returns the actions to carry out."""
-    breaches = find_breaches(data["health"], data["error"], data["latency"], data["slow"], data["logs"], thresholds)
+    breaches = find_breaches(data["health"], data["error"], data["latency"], data["slow"], data["logs"], thresholds,
+                             data.get("resource"), data.get("error_logs"))
     healthy = healthy_routes(data["error"], data["latency"], data["slow"], thresholds, config.CLOSE_RATIO)
     traffic_ok = (data["error"].get("total_request_count") or 0) >= config.MIN_REQUESTS
     return process_cycle(config.SERVICE_NAME, breaches, signature_for(window, now), healthy, traffic_ok, now,
@@ -114,6 +120,21 @@ def _notify(event: str, incident: dict, now: int, suffix: str = "") -> None:
     if outbox.enqueue("discord", key, incident["id"], {"event": event}, now):
         if event in ("opened", "reminder", "regressed"):
             incidents.mark_notified(incident["id"], now)
+
+
+def _same_failure_mode(match: dict, status: Optional[int]) -> bool:
+    """False when the remembered incident failed with a different HTTP status than the one failing now.
+
+    The same fingerprint and runtime context can hide a different cause (500s from a payment fault, 503s from an
+    exhausted pool), so such a precedent is only a hypothesis for a full diagnosis, not a verified match. Without a
+    recorded status on either side there is nothing to compare, and the match stands.
+    """
+    if not status:
+        return True
+    past = next((e["detail"] for e in reversed(incidents.events(match.get("incident_id") or ""))
+                 if e["kind"] == "context:status"), "")
+    past_codes = re.findall(r"\b[5]\d\d\b", past)
+    return not past_codes or str(status) in past_codes
 
 
 def handle_actions(actions: List[Action], data: dict, submit: Submit, now: int) -> None:
@@ -129,11 +150,15 @@ def handle_actions(actions: List[Action], data: dict, submit: Submit, now: int) 
                 log.exception("recall failed")
                 matches, context = [], ""
             exact_fix = [m for m in matches if m.get("exact") and m.get("fix")]
+            status = store.latest_error_status(config.SERVICE_NAME, now - int(max(thresholds.interval_minutes, 1.0) * 3 * 60_000))
+            if status:
+                incidents.record_event(inc["id"], "context:status", "watcher", f"error status {status}", now)
+            exact_fix = [m for m in exact_fix if _same_failure_mode(m, status)]
             if exact_fix:
                 # Memory-first: a known problem with a confirmed fix needs a light verification, not a full diagnosis.
                 kind, prompt = "verify", build_verify_prompt(inc["evidence"], context, exact_fix[:2])
             else:
-                summary = build_summary(data["health"], data["error"], data["latency"], data["slow"], data["logs"])
+                summary = build_summary(data["health"], data["error"], data["latency"], data["slow"], data["logs"], data.get("traces"))
                 kind, prompt = "full", build_alert_prompt(inc["evidence"], summary, matches or None)
             incidents.update_fields(inc["id"], diagnosis_mode=kind, context_sample=context or None)
             _notify("opened", incidents.get(inc["id"]) or inc, now)
@@ -158,6 +183,32 @@ def _enqueue_memory(inc: dict, now: int) -> None:
         incidents.update_fields(inc["id"], memory_status="pending")
 
 
+def _drop_stale_restart(inc: dict, proposed: Optional[str]) -> tuple[Optional[str], dict]:
+    """A memory incident is diagnosed some time after the alert; the leak may have been switched off and released since.
+
+    Re-read memory now: if every process is back under the threshold, a restart would reclaim nothing, so the proposal
+    is dropped and the diagnosis says so. Anything unexpected (no reading, other incident kinds) leaves it untouched.
+    """
+    limit = thresholds.memory_alert_mb
+    if proposed != "restart_worker" or limit <= 0:
+        return proposed, inc
+    if not any(f.get("kind") == "resource" for f in inc.get("fingerprints") or []):
+        return proposed, inc
+    procs = (tools.get_resource_usage() or {}).get("processes") or []
+    if not procs or max(p["rss_mb"] for p in procs) >= limit:
+        return proposed, inc
+    worst = max(procs, key=lambda p: p["rss_mb"])
+    note = (f"\n\n**Live re-check**: memory is already back to {worst['rss_mb']:.0f}MB on '{worst['name']}' "
+            f"(threshold {limit:g}MB), so the leak has stopped and been released. No restart is needed.\n"
+            "Proposed action: none")
+    incidents.set_rca(inc["id"], (inc.get("rca_text") or "") + note, inc.get("rca_status") or "ok",
+                      inc.get("llm_calls"), inc.get("llm_tokens"))
+    incidents.update_fields(inc["id"], proposed_action=None)
+    incidents.record_event(inc["id"], "diagnosis:restart-dropped", "watcher",
+                           f"memory back to {worst['rss_mb']:.0f}MB before diagnosis completed", store.now_ms())
+    return None, incidents.get(inc["id"]) or inc
+
+
 def on_diagnosis_done(incident_id: str, now: int) -> None:
     """The stored diagnosis (real or templated) is ready: send it as a follow-up, once, if the incident is still active.
 
@@ -167,6 +218,7 @@ def on_diagnosis_done(incident_id: str, now: int) -> None:
     if inc is None:
         return
     proposed = memmod.parse_proposed_action(inc.get("rca_text") or "", set(config.ALLOWED_ACTIONS))
+    proposed, inc = _drop_stale_restart(inc, proposed)
     if proposed:
         incidents.update_fields(incident_id, proposed_action=proposed)
         inc = incidents.get(incident_id) or inc
@@ -188,7 +240,7 @@ def resume_pending(window: float, submit: Submit) -> int:
     """After a restart: re-queue diagnoses that never finished. Returns how many were queued."""
     n = 0
     data = collect(window)
-    summary = build_summary(data["health"], data["error"], data["latency"], data["slow"], data["logs"])
+    summary = build_summary(data["health"], data["error"], data["latency"], data["slow"], data["logs"], data.get("traces"))
     for inc in incidents.list_active(config.SERVICE_NAME):
         if inc["rca_status"] == "pending":
             submit(inc["id"], build_alert_prompt(inc["evidence"], summary, inc.get("recalled") or None),
@@ -215,8 +267,22 @@ def deliver_memory(item: dict, now: int, window: float, mem: Any = None,
     if not mem.enabled:
         return notifier.Delivery("skip", detail="memory off")
     resolved_at = inc["resolved_at"] or now
-    actions = ops_client.actions_between(journal_fn(), inc["opened_at"] - 30_000, resolved_at)
-    fix, failed = memmod.split_actions(actions, set(config.ALLOWED_ACTIONS))
+    journal_actions = ops_client.actions_between(journal_fn(), inc["opened_at"] - 30_000, resolved_at)
+    existing_actions = inc.get("actions") or []
+
+    # Preserve operator-verified actions and merge with journal entries
+    merged_actions = list(existing_actions)
+    seen_action_names = {a.get("action") for a in existing_actions if a.get("action")}
+    for ja in journal_actions:
+        if ja.get("action") and ja["action"] not in seen_action_names:
+            merged_actions.append(ja)
+            seen_action_names.add(ja["action"])
+    actions = merged_actions
+
+    fix, failed = memmod.split_actions(actions, None)
+    if not fix and inc.get("proposed_action"):
+        fix = inc["proposed_action"]
+
     incidents.set_actions(inc["id"], actions)
     source = inc.get("source") or "live"
     narrative = memmod.build_narrative(inc, actions, fix, failed, inc.get("context_sample") or "",

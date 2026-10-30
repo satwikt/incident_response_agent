@@ -1,7 +1,8 @@
 """Pydantic schemas for SRE Copilot API."""
 
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing_extensions import Annotated
+from typing import Any, Dict, List, Optional
 
 
 class ChatInfoResponse(BaseModel):
@@ -27,17 +28,109 @@ class NewChatResponse(BaseModel):
 
 
 class AskChatRequest(BaseModel):
-    message: str
+    message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)]
 
 
 class AskChatResponse(BaseModel):
     response: str
     llm_calls: int = 0
+    intent: Optional[str] = None
+    agent: Optional[str] = None
+    incident_id: Optional[str] = None
+    tier: Optional[str] = None
+    model: Optional[str] = None
+    provider: Optional[str] = None            # primary provider label for the tier ("Token Factory", "NVIDIA NIM", "Groq")
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    budget_exhausted: Optional[bool] = None   # True: no model was called (demo budget); the text may be a labelled replay
 
 
 class RenameChatRequest(BaseModel):
-    title: str
+    title: str = Field(max_length=200)
 
 
 class SuccessResponse(BaseModel):
     success: bool
+
+
+# ─── Dashboard Schemas ──────────────────────────────────────────────────────────
+
+class IncidentEvent(BaseModel):
+    id: int
+    incident_id: str
+    ts: int
+    kind: str
+    actor: str
+    detail: Optional[str] = ""
+
+
+class IncidentSummary(BaseModel):
+    id: str
+    service: str
+    status: str
+    severity: str
+    opened_at: int
+    last_seen_at: int
+    resolved_at: Optional[int] = None
+    resolved_by: Optional[str] = None
+    fingerprint: str
+    evidence: List[str] = []
+    rca_text: Optional[str] = None
+    rca_status: str = "pending"
+    proposed_action: Optional[str] = None
+    actions: List[Dict[str, Any]] = []
+    recalled: List[Dict[str, Any]] = []
+    version: int = 1
+    diagnosis_mode: Optional[str] = None      # full | verify (how the automatic diagnosis was produced)
+    llm_calls: Optional[int] = None           # cost of the automatic diagnosis
+    llm_tokens: Optional[int] = None
+
+
+class IncidentDetail(IncidentSummary):
+    fingerprints: List[Dict[str, Any]] = []
+    context_sample: Optional[str] = None
+    memory_status: Optional[str] = None
+    timeline: List[IncidentEvent] = []
+
+
+class MemoryItem(BaseModel):
+    incident_id: str
+    narrative: str
+    score: Optional[float] = None
+    fix: Optional[str] = None
+    failed: List[str] = []
+    source: str = "live"
+    tags: List[str] = []
+
+
+class PastIncidentsMemoryResponse(BaseModel):
+    enabled: bool
+    bank_id: str
+    total: int
+    memories: List[MemoryItem]
+
+
+class TelemetryOverviewResponse(BaseModel):
+    service: str
+    health: Dict[str, Any]
+    error_rate: Dict[str, Any]
+    latency: Dict[str, Any]
+    active_incidents: int
+    total_incidents: int
+
+
+class IncidentFeedbackRequest(BaseModel):
+    action: str
+    worked: bool
+    notes: Optional[str] = None
+
+
+class IncidentFeedbackResponse(BaseModel):
+    incident_id: str
+    status: str
+    action: str
+    worked: bool
+    memory_retained: bool
+    new_recommendation: Optional[str] = None
+    message: str
+

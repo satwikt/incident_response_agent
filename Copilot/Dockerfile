@@ -2,8 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Copy ultra-fast uv binary
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv pip install --system --no-cache -r requirements.txt
 
 # Unprivileged user; /app/data holds the SQLite file and is a mounted volume.
 RUN useradd --create-home --uid 10001 app && mkdir -p /app/data && chown -R app:app /app

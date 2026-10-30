@@ -30,9 +30,15 @@ class WatcherThresholds:
     # Comma-separated keywords; a match in recent events counts as a breach.
     log_keywords: List[str] = field(default_factory=lambda: [
         kw.strip()
-        for kw in os.getenv("ALERT_LOG_KEYWORDS", "CRITICAL,Traceback").split(",")
+        for kw in os.getenv("ALERT_LOG_KEYWORDS", "CRITICAL,Traceback,FATAL,panic,OutOfMemoryError").split(",")
         if kw.strip()
     ])
+
+    # Alert if at least this many ERROR/exception log lines (not tied to a request) appear in the window. 0 disables.
+    error_log_count: int = int(os.getenv("ALERT_ERROR_LOG_COUNT", "3"))
+
+    # Alert if any monitored process's resident memory (MB, from Prometheus) reaches this value. 0 disables the check.
+    memory_alert_mb: float = float(os.getenv("ALERT_MEMORY_MB", "200"))
 
     # Maximum event lines fetched per keyword scan.
     log_scan_limit: int = int(os.getenv("ALERT_LOG_SCAN_LIMIT", "50"))

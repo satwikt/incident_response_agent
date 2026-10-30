@@ -1,0 +1,17 @@
+# Collector merge layer for the upstream Astronomy Shop.
+# Arrays replace upstream arrays, so preserve the required existing exporters.
+
+exporters:
+  otlp_http/tempo:
+    endpoint: http://tempo:4318
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      exporters: [debug, otlp_grpc/jaeger, span_metrics, otlp_http/tempo]
+    metrics:
+      exporters: [debug, otlp_http/prometheus]
+    logs:
+      exporters: [debug, opensearch]

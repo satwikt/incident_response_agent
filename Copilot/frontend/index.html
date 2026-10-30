@@ -191,9 +191,15 @@
                  rounded px-1.5 -ml-1.5 focus:bg-surface2 focus:ring-1 focus:ring-accentDim/50 max-w-[50vw]"
                         value="Select a conversation" />
                 </div>
-                <div class="flex items-center gap-2 text-xs font-mono text-dim shrink-0">
-                    <span class="w-1.5 h-1.5 rounded-full bg-success text-success pulse-dot"></span>
-                    <span class="hidden sm:inline">Google ADK • Prom / Loki / Tempo</span>
+                <div class="flex items-center gap-3 text-xs font-mono shrink-0">
+                    <a href="/dashboard" class="px-2.5 py-1 rounded bg-surface2 hover:bg-surface3 border border-line text-accent font-medium transition flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                        <span>Incident Dashboard</span>
+                    </a>
+                    <div class="hidden sm:flex items-center gap-1.5 text-dim">
+                        <span class="w-1.5 h-1.5 rounded-full bg-success text-success pulse-dot"></span>
+                        <span>Telemetry Online</span>
+                    </div>
                 </div>
             </header>
 
@@ -209,16 +215,16 @@
                     <p class="text-muted text-sm mb-4">Ask any question about errors, latency, logs, or health. The agent will execute tools autonomously.</p>
                     <div class="grid grid-cols-2 gap-2 text-xs text-left font-mono">
                         <button onclick="sendQuickPrompt('What is the current error rate across all routes?')" class="p-3 bg-surface border border-line rounded-lg hover:border-accent/40 transition-colors">
-                            ⚡ "What is the current error rate?"
+                            "What is the current error rate?"
                         </button>
                         <button onclick="sendQuickPrompt('Check p95 latency and show slow requests')" class="p-3 bg-surface border border-line rounded-lg hover:border-accent/40 transition-colors">
-                            🐢 "Check latency & slow requests"
+                            "Check latency & slow requests"
                         </button>
                         <button onclick="sendQuickPrompt('Fetch recent error logs and identify root cause')" class="p-3 bg-surface border border-line rounded-lg hover:border-accent/40 transition-colors">
-                            📜 "Fetch error logs & root cause"
+                            "Fetch error logs & root cause"
                         </button>
                         <button onclick="sendQuickPrompt('Check service health and list failing components')" class="p-3 bg-surface border border-line rounded-lg hover:border-accent/40 transition-colors">
-                            🛠️ "Check health & list failures"
+                            "Check health & list failures"
                         </button>
                     </div>
                 </div>
@@ -311,10 +317,17 @@
 
             function renderMarkdownLite(raw) {
                 let text = escapeHtml(raw);
-                text = text.replace(/```([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`);
+                text = text.replace(/```(?:([a-zA-Z0-9_-]+)\n)?([\s\S]*?)```/g, (_, lang, code) => {
+                    const cleanCode = (code || '').trim();
+                    return `<pre><code class="language-${lang || 'text'}">${cleanCode}</code></pre>`;
+                });
                 text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
                 text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-                text = text.replace(/\n/g, '<br>');
+                const parts = text.split(/(<pre[\s\S]*?<\/pre>)/);
+                text = parts.map((part) => {
+                    if (part.startsWith('<pre')) return part;
+                    return part.replace(/\n/g, '<br>');
+                }).join('');
                 return text;
             }
 
@@ -394,7 +407,7 @@
             }
 
 
-            function appendMessage(role, content, llmCalls) {
+            function appendMessage(role, content, llmCalls, meta) {
                 const wrap = document.createElement('div');
                 if (role === 'user') {
                     wrap.className = 'flex justify-end';
@@ -404,6 +417,11 @@
                     let callsHtml = '';
                     if (llmCalls !== undefined && llmCalls !== null) {
                         callsHtml = `<span class="text-[10px] text-dim font-mono ml-2 border border-line px-1.5 py-0.5 rounded-full">${llmCalls} LLM calls</span>`;
+                    }
+                    if (meta && meta.tier) {
+                        const short = (meta.model || '').split('/').pop();
+                        const label = [meta.tier[0].toUpperCase() + meta.tier.slice(1), short, meta.provider].filter(Boolean).join(' - ');
+                        callsHtml += `<span class="text-[10px] text-accent font-mono ml-2 border border-line px-1.5 py-0.5 rounded-full">${escapeHtml(label)}</span>`;
                     }
                     wrap.innerHTML = `<div class="flex items-center mb-1"><span class="text-[11px] font-mono text-accent">INCIDENT RESPONSE AGENT</span>${callsHtml}</div><div class="text-sm leading-relaxed text-text msg-prose">${renderMarkdownLite(content)}</div>`;
                 }
@@ -444,7 +462,7 @@
                 try {
                     const res = await api(`/ask/${currentChatId}`, { method: 'POST', body: JSON.stringify({ message: text }) });
                     document.getElementById('typing-indicator')?.remove();
-                    appendMessage('agent', res.response, res.llm_calls);
+                    appendMessage('agent', res.response, res.llm_calls, res);
                     scrollToBottom();
                 } catch (err) {
                     document.getElementById('typing-indicator')?.remove();

@@ -1,88 +1,242 @@
-# Three services: the monitored demo app, the Copilot, and Hindsight (agent memory).
-# Each container receives only the variables it needs, so the Copilot never sees the chaos key.
-services:
-  demo:
-    build: ./Demo/app
-    ports:
-      - "127.0.0.1:8000:8000"
-    environment:
-      SERVICE_NAME: todo-app
-      COPILOT_INGEST_URL: http://copilot:8001/ingest/events
-      INGEST_KEY: ${INGEST_KEY:?set INGEST_KEY in .env}
-      CHAOS_KEY: ${CHAOS_KEY:-}
-      OPS_KEY: ${OPS_KEY:-}
-      FAULT_ERROR_RATE: ${FAULT_ERROR_RATE:-0.3}
-      POOL_SIZE: ${POOL_SIZE:-10}
-      POOL_WAIT_S: ${POOL_WAIT_S:-2.0}
-      MEM_LIMIT_MB: ${MEM_LIMIT_MB:-150}
-      LATENCY_MIN_S: ${LATENCY_MIN_S:-2.0}
-      LATENCY_MAX_S: ${LATENCY_MAX_S:-5.0}
-    networks: [internal]
+# Astronomy Shop Lite Architecture: 3 Lean Microservices + Postgres + LGTM Observability + AI Copilot
+# Replaces the 30-container upstream polyglot stack with a high-performance, fully-instrumented mesh.
 
+services:
+  # ── Astronomy Shop: Frontend Gateway & Web Storefront ───────────────────────
+  frontend:
+    build: ./services
+    container_name: astronomy-frontend
+    ports:
+      - "9922:8080"
+    environment:
+      CATALOG_SERVICE_URL: http://catalog:5001
+      CHECKOUT_SERVICE_URL: http://checkout:5002
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
+      LOKI_URL: http://loki:3100
+      ENABLE_SYNTHETIC_TRAFFIC: "true"
+      CHAOS_KEY: ${CHAOS_KEY:-}
+    command: ["uvicorn", "frontend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    depends_on:
+      - catalog
+      - checkout
+    restart: unless-stopped
+
+  # ── Astronomy Shop: Catalog & Cart Microservice ──────────────────────────────
+  catalog:
+    build: ./services
+    container_name: astronomy-catalog
+    ports:
+      - "5001:5001"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@astronomy-db:5432/astronomy
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
+      LOKI_URL: http://loki:3100
+      CHAOS_KEY: ${CHAOS_KEY:-}
+    command: ["uvicorn", "catalog.main:app", "--host", "0.0.0.0", "--port", "5001"]
+    depends_on:
+      - astronomy-db
+    restart: unless-stopped
+
+  # ── Astronomy Shop: Checkout & Order Microservice (with Fault Engine) ────────
+  checkout:
+    build: ./services
+    container_name: astronomy-checkout
+    ports:
+      - "5002:5002"
+    environment:
+      CATALOG_SERVICE_URL: http://catalog:5001
+      DATABASE_URL: postgresql://postgres:postgres@astronomy-db:5432/astronomy
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
+      LOKI_URL: http://loki:3100
+      CHAOS_KEY: ${CHAOS_KEY:-}
+    command: ["uvicorn", "checkout.main:app", "--host", "0.0.0.0", "--port", "5002"]
+    depends_on:
+      - catalog
+      - astronomy-db
+    restart: unless-stopped
+
+  # ── Database: PostgreSQL 16 ──────────────────────────────────────────────────
+  astronomy-db:
+    image: postgres:16-alpine
+    container_name: astronomy-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: astronomy
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # ── Observability: Prometheus ───────────────────────────────────────────────
+  prometheus:
+    image: quay.io/prometheus/prometheus:v3.13.3
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./services/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    restart: unless-stopped
+
+  # ── Observability: Grafana Tempo ────────────────────────────────────────────
+  tempo:
+    image: grafana/tempo:latest
+    container_name: astronomy-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./otel_demo/integration/astronomy-shop/tempo-config.yaml:/etc/tempo.yaml:ro
+    ports:
+      - "127.0.0.1:3200:3200"
+      - "4318:4318"
+    restart: unless-stopped
+
+  # ── Observability: Grafana Loki ─────────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: astronomy-loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    restart: unless-stopped
+
+  # ── Observability: Grafana Dashboard ────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./otel_demo/integration/astronomy-shop/grafana/provisioning/datasources/lgtm.yaml:/etc/grafana/provisioning/datasources/lgtm.yaml:ro
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+    restart: unless-stopped
+
+  # ── AI SRE Incident Copilot ─────────────────────────────────────────────────
   copilot:
     build: ./Copilot
+    container_name: incident-copilot
     ports:
-      - "127.0.0.1:8001:8001"
+      - "9911:8001"
     environment:
-      APP_SERVICE_NAME: todo-app
-      INGEST_KEYS: todo-app:${INGEST_KEY:?set INGEST_KEY in .env}
-      AGENT_MODEL: ${AGENT_MODEL:-cerebras/gpt-oss-120b}
-      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      APP_SERVICE_NAME: ${APP_SERVICE_NAME:-checkout}
+      INGEST_KEYS: ${INGEST_KEYS:-checkout:key-for-checkout,catalog:key-for-catalog,frontend:key-for-frontend}
+      # Inference: Nebius Token Factory is primary when NEBIUS_API_KEY is set; NVIDIA NIM and Groq are optional fallbacks
+      INFERENCE_PROVIDER: ${INFERENCE_PROVIDER:-nebius}
+      NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+      NEBIUS_BASE_URL: ${NEBIUS_BASE_URL:-https://api.tokenfactory.nebius.com/v1}
+      NEBIUS_NANO_MODEL: ${NEBIUS_NANO_MODEL:-}
+      NEBIUS_SUPER_MODEL: ${NEBIUS_SUPER_MODEL:-}
+      NEBIUS_ULTRA_MODEL: ${NEBIUS_ULTRA_MODEL:-}
+      # NVIDIA Nemotron model tiers & LiteLLM routing
+      AGENT_MODEL: ${AGENT_MODEL:-super}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_BASE_URL: ${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NEMOTRON_NANO_MODEL: ${NEMOTRON_NANO_MODEL:-nvidia/nemotron-3.5-lightning-30b-a3b}
+      NEMOTRON_SUPER_MODEL: ${NEMOTRON_SUPER_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}
+      NEMOTRON_ULTRA_MODEL: ${NEMOTRON_ULTRA_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}
+      # Groq fallback model
+      GROQ_API_KEY: ${GROQ_API_KEY:-${HINDSIGHT_LLM_API_KEY:-}}
+      GROQ_MODEL: ${GROQ_MODEL:-groq/llama-3.3-70b-versatile}
+      # Observability backends (internal docker network)
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+      TEMPO_URL: http://tempo:3200
+      # Incident watcher & detection
       WATCHER_INTERVAL_MINUTES: ${WATCHER_INTERVAL_MINUTES:-1}
-      ALERT_ERROR_RATE_THRESHOLD: ${ALERT_ERROR_RATE_THRESHOLD:-10}
+      ALERT_ERROR_RATE_THRESHOLD: ${ALERT_ERROR_RATE_THRESHOLD:-5}
       ALERT_LATENCY_P95_MS: ${ALERT_LATENCY_P95_MS:-1000}
-      MIN_REQUESTS: ${MIN_REQUESTS:-20}
+      MIN_REQUESTS: ${MIN_REQUESTS:-3}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      # Hindsight memory
       MEMORY_MODE: ${MEMORY_MODE:-on}
       HINDSIGHT_URL: http://hindsight:8888
       HINDSIGHT_BANK: ${HINDSIGHT_BANK:-incident-response}
       MEMORY_MIN_SCORE: ${MEMORY_MIN_SCORE:-0.05}
-      APP_OPS_URL: http://demo:8000
-      OPS_KEY: ${OPS_KEY:-}
-      RECOVERY_WINDOWS: ${RECOVERY_WINDOWS:-3}
-      CLOSE_RATIO: ${CLOSE_RATIO:-0.5}
-      RECURRENCE_WINDOW_HOURS: ${RECURRENCE_WINDOW_HOURS:-24}
-      RENOTIFY_MINUTES: ${RENOTIFY_MINUTES:-30}
-      MAX_OPEN_INCIDENTS: ${MAX_OPEN_INCIDENTS:-5}
+      MEMORY_RETAIN_FAILED_ATTEMPTS: ${MEMORY_RETAIN_FAILED_ATTEMPTS:-on}
+      # Token budget & circuit breaker
       AGENT_MAX_RUNS_PER_HOUR: ${AGENT_MAX_RUNS_PER_HOUR:-12}
       AGENT_TIMEOUT_S: ${AGENT_TIMEOUT_S:-120}
       AGENT_MAX_LLM_CALLS: ${AGENT_MAX_LLM_CALLS:-6}
       AGENT_DAILY_TOKEN_BUDGET: ${AGENT_DAILY_TOKEN_BUDGET:-150000}
       AGENT_REASONING_EFFORT: ${AGENT_REASONING_EFFORT:-low}
-      AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS:-1200}
+      AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS:-8192}
+      # One provider call may take 55 s and is retried once (110 s, inside AGENT_TIMEOUT_S), so a stalled NVIDIA call still ends in a clean error or the Groq fallback.
+      AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-55}
+      AGENT_LLM_RETRIES: ${AGENT_LLM_RETRIES:-1}
       AGENT_RATE_LIMIT_RETRIES: ${AGENT_RATE_LIMIT_RETRIES:-3}
       AGENT_RATE_LIMIT_WAIT_S: ${AGENT_RATE_LIMIT_WAIT_S:-45}
       BREAKER_FAILURES: ${BREAKER_FAILURES:-3}
       BREAKER_PAUSE_S: ${BREAKER_PAUSE_S:-300}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      ALLOWED_ACTIONS: ${ALLOWED_ACTIONS:-flush_pool,restart_worker,rollback_config,rollback_release,enable_fallback,create_missing_table,run_db_migration,apply_schema_migration,disable_fault,reconcile_orders,hotfix_query,patch_code}
     volumes:
       - copilot-data:/app/data
-    depends_on: [hindsight]
-    networks: [internal]
+      - ./docs/runbooks:/app/docs/runbooks:ro
+    depends_on:
+      - hindsight
+      - prometheus
+      - tempo
+      - loki
+    restart: unless-stopped
 
-  # Agent memory. No authentication of its own: it is reachable only on the private compose network, plus localhost for
-  # the UI on 9999. Provider and model are set explicitly (the image defaults to OpenAI); see docs/DESIGN.md section 14.
+  # ── Agent Memory (Hindsight) ────────────────────────────────────────────────
   hindsight:
     image: ghcr.io/vectorize-io/hindsight:latest
+    container_name: incident-hindsight
     ports:
       - "127.0.0.1:9999:9999"
     environment:
       HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-groq}
       HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-openai/gpt-oss-20b}
       HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-}
+      # Empty = the provider's own endpoint (Groq). Set it to use any OpenAI-compatible endpoint, e.g. Nebius Token Factory.
+      HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_LLM_BASE_URL:-}
       HINDSIGHT_API_LLM_GROQ_SERVICE_TIER: ${HINDSIGHT_LLM_GROQ_SERVICE_TIER:-on_demand}
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: ${HINDSIGHT_EMBEDDINGS_PROVIDER:-local}
+      # Groq models cap output at 16384 tokens; Hindsight's default (64000) makes every retain fail with HTTP 400.
+      HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS: ${HINDSIGHT_RETAIN_MAX_COMPLETION_TOKENS:-16384}
     volumes:
       - hindsight-data:/home/hindsight/.pg0
     restart: unless-stopped
-    networks: [internal]
+
+  # ── Telemetry Adapter ───────────────────────────────────────────────────────
+  adapter:
+    build: ./otel_demo/integration/astronomy-shop
+    container_name: astronomy-adapter
+    environment:
+      COPILOT_INGEST_URL: http://copilot:8001/ingest/events
+      COPILOT_INGEST_KEYS: ${INGEST_KEYS:-checkout:key-for-checkout,catalog:key-for-catalog,frontend:key-for-frontend}
+      COPILOT_WATCH_SERVICE: ${APP_SERVICE_NAME:-checkout}
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+      TEMPO_URL: http://tempo:3200
+    command:
+      - "--ingest-url=http://copilot:8001/ingest/events"
+      - "--ingest-keys=checkout:key-for-checkout,catalog:key-for-catalog,frontend:key-for-frontend"
+      - "--watch-service=checkout"
+      - "--preset=checkout-error-ratio"
+      - "--preset=checkout-error-logs"
+      - "--preset=checkout-request-logs"
+      - "--tempo-service=checkout"
+      - "--prometheus-url=http://prometheus:9090"
+      - "--loki-url=http://loki:3100"
+      - "--tempo-url=http://tempo:3200"
+      - "--interval=5"
+    depends_on:
+      - copilot
+      - prometheus
+      - tempo
+      - loki
+    restart: unless-stopped
 
 volumes:
+  db-data:
   copilot-data:
   hindsight-data:
-
-networks:
-  internal:
-    driver: bridge

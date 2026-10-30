@@ -1,0 +1,101 @@
+# Production override for the hosted demo (one VM, public HTTPS). Use it on top of the normal compose file:
+#
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+#
+# What it changes:
+#   * Caddy is the ONLY public entry point (80/443 for the Copilot, 8443 for the shop + faults deck, TLS from Let's Encrypt).
+#     Every other host port is removed, so Postgres, Prometheus, Loki, Tempo, Grafana (default admin/admin), Hindsight and the
+#     ingest API are reachable from inside the Docker network only. Needs Docker Compose >= 2.24 (uses !reset).
+#   * CHAOS_KEY becomes mandatory: fault injection is refused without it. Publish it in the judges' testing instructions;
+#     do not reuse any real secret.
+#   * Cost guards for weeks of availability: lower diagnosis and chat call caps and a daily token budget. At the chat cap the
+#     Copilot answers with a labelled replay of a recorded real run instead of calling the model (api/budget.py).
+#   * Log rotation on every container, restart policies kept from the base file.
+#
+# Required in .env: DEMO_DOMAIN (e.g. 203-0-113-5.sslip.io), CHAOS_KEY, NEBIUS_API_KEY (or another inference key).
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: demo-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8443:8443"
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN:?set DEMO_DOMAIN in .env (a hostname that points at this VM)}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - copilot
+      - frontend
+    <<: *logging
+
+  frontend:
+    ports: !reset []
+    environment:
+      CHAOS_KEY: ${CHAOS_KEY:?set CHAOS_KEY in .env (the demo's fault-injection key)}
+    <<: *logging
+
+  catalog:
+    ports: !reset []
+    environment:
+      CHAOS_KEY: ${CHAOS_KEY:?set CHAOS_KEY in .env}
+    <<: *logging
+
+  checkout:
+    ports: !reset []
+    environment:
+      CHAOS_KEY: ${CHAOS_KEY:?set CHAOS_KEY in .env}
+    <<: *logging
+
+  astronomy-db:
+    ports: !reset []
+    <<: *logging
+
+  prometheus:
+    ports: !reset []
+    <<: *logging
+
+  tempo:
+    ports: !reset []
+    <<: *logging
+
+  loki:
+    ports: !reset []
+    <<: *logging
+
+  grafana:
+    ports: !reset []
+    <<: *logging
+
+  hindsight:
+    ports: !reset []
+    <<: *logging
+
+  adapter:
+    <<: *logging
+
+  copilot:
+    ports: !reset []
+    environment:
+      PUBLIC_BASE_URL: https://${DEMO_DOMAIN:?set DEMO_DOMAIN in .env}
+      AGENT_MAX_RUNS_PER_HOUR: ${AGENT_MAX_RUNS_PER_HOUR:-6}
+      AGENT_DAILY_TOKEN_BUDGET: ${AGENT_DAILY_TOKEN_BUDGET:-300000}
+      CHAT_MAX_LLM_CALLS_PER_HOUR: ${CHAT_MAX_LLM_CALLS_PER_HOUR:-40}
+      CHAT_MAX_LLM_CALLS_PER_DAY: ${CHAT_MAX_LLM_CALLS_PER_DAY:-300}
+    <<: *logging
+
+volumes:
+  caddy-data:
+  caddy-config:

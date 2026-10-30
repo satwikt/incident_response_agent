@@ -10,6 +10,7 @@ RESOLVED is terminal; a recurrence is a NEW incident linked through ``recurrence
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from typing import Any, Dict, List, Optional
 
@@ -86,6 +87,38 @@ def list_recent(service: str, limit: int = 50) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def list_all(service: Optional[str] = None, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    try:
+        clauses: List[str] = []
+        args: List[Any] = []
+        if service:
+            clauses.append("service = ?")
+            args.append(service)
+        if status:
+            clauses.append("status = ?")
+            args.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"SELECT * FROM incidents {where} ORDER BY seq DESC LIMIT ?"
+        args.append(max(1, min(limit, 500)))
+        rows = conn.execute(query, tuple(args)).fetchall()
+        return [_row(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def list_events(incident_id: str) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, incident_id, ts, kind, actor, detail FROM incident_events WHERE incident_id = ? ORDER BY id ASC",
+            (incident_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def find_recent_resolved(service: str, fingerprint_ids: set, since_ms: int) -> Optional[Dict[str, Any]]:
     """Most recently resolved incident sharing a fingerprint, resolved at or after ``since_ms``."""
     conn = get_db_connection()
@@ -149,21 +182,37 @@ def events(incident_id: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def _evidence_key(line: str) -> str:
+    """An evidence line with its numbers blanked, so the same breach seen again compares equal."""
+    return re.sub(r"\d+(?:\.\d+)?", "#", str(line)).strip().lower()
+
+
 def touch_breach(incident_id: str, now: int, fingerprints: List[dict], evidence: List[str],
                  severity: str) -> Dict[str, Any]:
-    """The incident was seen breaching again: merge fingerprints, refresh evidence, reset the healthy streak."""
+    """The incident was seen breaching again: merge fingerprints and evidence, reset the healthy streak.
+
+    Evidence keeps what the incident was opened with. A later cycle's line for the same breach (only its numbers
+    differ, e.g. 100% -> 50% as a fix takes effect) is not stored: it would overwrite the picture the diagnosis and the
+    memory narrative were written from. A breach of a new kind or route is appended.
+    """
     inc = get(incident_id)
     if inc is None:
         raise NotFound(incident_id)
     known = {f["fp"] for f in inc["fingerprints"]}
     merged = inc["fingerprints"] + [f for f in fingerprints if f["fp"] not in known]
+    kept = list(inc["evidence"])
+    seen = {_evidence_key(e) for e in kept}
+    for line in evidence:
+        if _evidence_key(line) not in seen:
+            seen.add(_evidence_key(line))
+            kept.append(line)
     worse = "critical" if "critical" in (severity, inc["severity"]) else severity
     conn = get_db_connection()
     try:
         conn.execute(
             "UPDATE incidents SET last_seen_at = ?, fingerprints_json = ?, evidence_json = ?, severity = ?, "
             "healthy_windows = 0, breach_windows = breach_windows + 1, version = version + 1 WHERE id = ?",
-            (now, json.dumps(merged), json.dumps(evidence), worse, incident_id),
+            (now, json.dumps(merged), json.dumps(kept), worse, incident_id),
         )
         conn.commit()
     finally:

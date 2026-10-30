@@ -1,0 +1,32 @@
+Nebius Token Factory models (https://api.tokenfactory.nebius.com/v1): 30 total, 5 Nemotron/NVIDIA (marked *)
+
+  MiniMaxAI/MiniMax-M3
+  MiniMaxAI/MiniMax-M3.1-Flash
+  NousResearch/Hermes-4-405B
+  Qwen/Qwen3-235B-A22B-Instruct-2507
+  Qwen/Qwen3-30B-A3B-Instruct-2507
+  Qwen/Qwen3-Embedding-8B
+  Qwen/Qwen3.5-397B-A17B
+  Qwen/Qwen3.8-27B
+  deepseek-ai/DeepSeek-V4-Flash-0731
+  deepseek-ai/DeepSeek-V4-Pro
+  deepseek-ai/DeepSeek-V4-Pro-0813
+  deepseek-ai/DeepSeek-V4.1-Flash
+  deepseek-ai/DeepSeek-V4.1-Flash-1017
+  google/gemma-3-27b-it
+  meta-models/muse-spark-open
+  moonshotai/Kimi-K2.6
+  moonshotai/Kimi-K2.7-Code
+  moonshotai/Kimi-K3
+* nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
+* nvidia/Nemotron-3-Ultra-550b-a55b
+* nvidia/Nemotron-3.5-Super-VL
+* nvidia/Nemotron-3_5-Lightning
+* nvidia/nemotron-3-super-120b-a12b
+  openai/gpt-oss-120b
+  openbmb/MiniCPM-V-4_5
+  reflection/beam
+  zai-org/GLM-5.1
+  zai-org/GLM-5.2
+  zai-org/GLM-5.3
+  zai-org/GLM-5.3-Flash
