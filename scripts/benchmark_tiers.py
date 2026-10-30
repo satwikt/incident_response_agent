@@ -14,7 +14,7 @@ fault. Numbers are medians over --runs replicates. Nothing is estimated: every v
     python scripts/benchmark_tiers.py --runs 1              # quick check
     python scripts/benchmark_tiers.py --render              # rebuild benchmark.md from an existing benchmark.json
 
-Needs the stack up with MEMORY_MODE=on and a working inference key. If CHAOS_KEY is set in the environment it is sent as the
+Needs the stack up with MEMORY_MODE=on and a working inference key. If CHAOS_KEY is set in the environment (or in the repo's .env) it is sent as the
 X-Chaos-Key header. The reset between replicates wipes copilot and Hindsight data (scripts/reset_demo.ps1 or .sh).
 """
 
@@ -323,5 +323,15 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _load_dotenv() -> None:
+    """Fill missing variables (CHAOS_KEY) from the repo's .env; script use only, a variable already set wins."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv(ROOT / ".env", override=False)
+
+
 if __name__ == "__main__":
+    _load_dotenv()
     raise SystemExit(main())
