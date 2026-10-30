@@ -10,7 +10,7 @@ An AI on-call teammate. It watches a microservice stack, opens incidents on its 
 - **License:** see [LICENSE](LICENSE)
 
 ## Why it matters
-Teams cutting observability and on-call cost still need fast RCA. Most AI SRE tools start from zero every incident. This one keeps episodic memory (Hindsight), so a repeat incident is verified with one short model call instead of a multi-call investigation (in our benchmark run: 1 call and about 480 tokens against 4 calls and about 25,600 tokens for a new incident; single run, see [Benchmark](#benchmark)).
+Teams cutting observability and on-call cost still need fast RCA. Most AI SRE tools start from zero every incident. This one keeps episodic memory (Hindsight), so a repeat incident is verified with one short model call instead of a multi-call investigation (in our benchmark run: 1 call and about 470 tokens against 4 calls and about 24,500 tokens for a new incident; single run, see [Benchmark](#benchmark)).
 
 ## How it works
 ```mermaid
@@ -47,13 +47,13 @@ Token Factory is the primary inference provider (`INFERENCE_PROVIDER=nebius`, Op
 ## Benchmark
 Measured with `python scripts/benchmark_tiers.py` on Token Factory (single replicate, so treat it as indicative, not statistical). Full table and method: [docs/benchmark.md](docs/benchmark.md), raw data: [docs/benchmark.json](docs/benchmark.json).
 
-| Scenario | Tier chosen | Model | Watcher auto-diagnosis | Model calls | Tokens |
-|---|---|---|---|---|---|
-| New incident | Ultra | `Nemotron-3-Ultra-550b-a55b` | 14.3 s (full RCA) | 4 | about 25,600 |
-| Context shift | Super | `nemotron-3-super-120b-a12b` | 7.9 s (full RCA) | 2 | about 16,200 |
-| Repeat after Fix Worked | Nano | `NVIDIA-Nemotron-3-Nano-30B-A3B` | 3.0 s (memory-first check) | 1 | about 480 |
+| Scenario | Tier chosen | Model | Watcher auto-diagnosis | Auto-diagnosis calls / tokens | Operator chat answer | Chat calls / tokens |
+|---|---|---|---|---|---|---|
+| New incident | Ultra | `Nemotron-3-Ultra-550b-a55b` | 25.2 s (full RCA) | 4 / 24,477 | 37.8 s | 12 / 182,009 |
+| Context shift | Super | `nemotron-3-super-120b-a12b` | 10.7 s (full RCA) | 4 / 27,964 | 6.6 s | 4 / 24,946 |
+| Repeat after Fix Worked | Nano | `NVIDIA-Nemotron-3-Nano-30B-A3B` | 3.0 s (memory-first check) | 1 / 474 | 77.8 s | 7 / 64,127 |
 
-What this supports: tier routing picks the expected tier in all three scenarios, and a repeat of a remembered fix is verified with far fewer model calls and tokens. What it does not show: in this run the repeat scenario's operator chat answer returned an error after 120 s, so we make no end-to-end chat-latency claim for repeats; that case is being re-measured.
+What this supports: tier routing picks the expected tier in all three scenarios, and the watcher verifies a repeat of a remembered fix with one short call (474 tokens against about 24,500 for a new incident). What it does not show: one replicate on one fault pair, and the operator chat answer for the repeat was slower (77.8 s, 7 calls) than for the new incident, so we make no end-to-end chat-latency claim for repeats; the saving is in the watcher path and in total tokens (64,127 against 182,009 in chat). An earlier replicate's repeat chat answer timed out at 120 s and is not included.
 
 ## Quick start
 Prereqs: Docker + Docker Compose, a Nebius Token Factory key.
