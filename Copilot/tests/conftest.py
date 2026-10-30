@@ -7,6 +7,9 @@ os.environ["COPILOT_DB_PATH"] = os.path.join(_TMP, "test.db")
 os.environ["INGEST_KEYS"] = "todo-app:key-for-todo-app,other-app:key-for-other-app"
 os.environ["APP_SERVICE_NAME"] = "todo-app"
 os.environ["MIN_REQUESTS"] = "20"
+# A developer's real .env may select Token Factory models; the unit tests assume no tier is served by Nebius.
+for _v in ("NEBIUS_NANO_MODEL", "NEBIUS_SUPER_MODEL", "NEBIUS_ULTRA_MODEL"):
+    os.environ[_v] = ""
 
 import pytest  # noqa: E402
 from fastapi import FastAPI  # noqa: E402

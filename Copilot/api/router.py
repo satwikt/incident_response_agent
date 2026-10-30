@@ -35,7 +35,7 @@ except ImportError:
 from agent import config
 from agent.agent import root_agent
 from agent.laya_classifier import get_laya_classifier
-from agent.llm import clean_agent_output, get_nemotron_model_name, scrub_secrets
+from agent.llm import clean_agent_output, get_nemotron_model_name, provider_chain, scrub_secrets
 from api import budget
 from agent.laya_classifier import _context_facts
 from agent.memory import parse_proposed_action, context_of
@@ -111,6 +111,18 @@ def _rca_runner_for(tier: str) -> Any:
 def _model_for_tier(tier: str) -> str:
     forced = _forced_model()
     return get_nemotron_model_name(tier) if forced in _TIERS else forced
+
+
+_PROVIDER_LABELS = {"nebius": "Token Factory", "nvidia": "NVIDIA NIM", "groq": "Groq"}
+
+
+def _provider_for_tier(tier: str) -> Optional[str]:
+    """Label of the provider the tier's calls go to first (a fallback link may serve a request if it fails)."""
+    try:
+        chain = provider_chain(tier)
+    except Exception:  # noqa: BLE001 - a label must never break a chat reply
+        return None
+    return _PROVIDER_LABELS.get(chain[0]) if chain else None
 
 
 def _live_error_context(service: str) -> Tuple[str, List[str]]:
@@ -535,6 +547,7 @@ async def ask_chat(id: int, request: AskChatRequest):
         "incident_id": registered_inc_id,
         "tier": tier,
         "model": _model_for_tier(tier) if tier else None,
+        "provider": _provider_for_tier(tier) if tier else None,
         "prompt_tokens": prompt_tokens or None,
         "completion_tokens": completion_tokens or None,
     }

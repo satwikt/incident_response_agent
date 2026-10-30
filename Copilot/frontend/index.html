@@ -407,7 +407,7 @@
             }
 
 
-            function appendMessage(role, content, llmCalls) {
+            function appendMessage(role, content, llmCalls, meta) {
                 const wrap = document.createElement('div');
                 if (role === 'user') {
                     wrap.className = 'flex justify-end';
@@ -417,6 +417,11 @@
                     let callsHtml = '';
                     if (llmCalls !== undefined && llmCalls !== null) {
                         callsHtml = `<span class="text-[10px] text-dim font-mono ml-2 border border-line px-1.5 py-0.5 rounded-full">${llmCalls} LLM calls</span>`;
+                    }
+                    if (meta && meta.tier) {
+                        const short = (meta.model || '').split('/').pop();
+                        const label = [meta.tier[0].toUpperCase() + meta.tier.slice(1), short, meta.provider].filter(Boolean).join(' - ');
+                        callsHtml += `<span class="text-[10px] text-accent font-mono ml-2 border border-line px-1.5 py-0.5 rounded-full">${escapeHtml(label)}</span>`;
                     }
                     wrap.innerHTML = `<div class="flex items-center mb-1"><span class="text-[11px] font-mono text-accent">INCIDENT RESPONSE AGENT</span>${callsHtml}</div><div class="text-sm leading-relaxed text-text msg-prose">${renderMarkdownLite(content)}</div>`;
                 }
@@ -457,7 +462,7 @@
                 try {
                     const res = await api(`/ask/${currentChatId}`, { method: 'POST', body: JSON.stringify({ message: text }) });
                     document.getElementById('typing-indicator')?.remove();
-                    appendMessage('agent', res.response, res.llm_calls);
+                    appendMessage('agent', res.response, res.llm_calls, res);
                     scrollToBottom();
                 } catch (err) {
                     document.getElementById('typing-indicator')?.remove();

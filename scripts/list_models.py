@@ -3,7 +3,8 @@
     python scripts/list_models.py                                  # print
     python scripts/list_models.py --out docs/token_factory_models.txt
 
-Reads NEBIUS_API_KEY (and optionally NEBIUS_BASE_URL) from the environment only; the key is never printed or written.
+Reads NEBIUS_API_KEY (and optionally NEBIUS_BASE_URL) from the environment, falling back to the project's .env when run
+as a script (a variable already in the environment wins); the key is never printed or written.
 Use the ids it prints for NEBIUS_NANO_MODEL / NEBIUS_SUPER_MODEL / NEBIUS_ULTRA_MODEL.
 """
 
@@ -68,5 +69,15 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _load_dotenv() -> None:
+    """Fill missing variables from the repo's .env (script use only, so main() stays environment-driven for tests)."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, ".env"), override=False)
+
+
 if __name__ == "__main__":
+    _load_dotenv()
     raise SystemExit(main())

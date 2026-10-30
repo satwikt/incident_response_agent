@@ -31,13 +31,13 @@ flowchart LR
 4. You mark **Fix Worked / Fix Failed**; the outcome is stored for next time.
 
 ## NVIDIA Nemotron usage
-| Situation | Tier | Model (env var) |
-|---|---|---|
-| New incident | Ultra | `NEBIUS_ULTRA_MODEL` |
-| Context shift | Super | `NEBIUS_SUPER_MODEL` |
-| Repeat of a known fix | Nano | `NEBIUS_NANO_MODEL` |
+| Situation | Tier | Token Factory model (env var) | Size |
+|---|---|---|---|
+| New incident | Ultra | `nvidia/Nemotron-3-Ultra-550b-a55b` (`NEBIUS_ULTRA_MODEL`) | 550B, 55B active |
+| Context shift | Super | `nvidia/nemotron-3-super-120b-a12b` (`NEBIUS_SUPER_MODEL`) | 120B, 12B active |
+| Repeat of a known fix | Nano | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` (`NEBIUS_NANO_MODEL`) | 30B, 3B active |
 
-Defaults are in `Copilot/agent/config.py`. **Disclosure:** by default Super and Ultra point to the same model (`nvidia/nemotron-3.5-super-vl-120b-a12b`); Nano is `nvidia/nemotron-3.5-lightning-30b-a3b`. Tier choice is visible per incident as a `diagnosis:tier` timeline event.
+All three are NVIDIA open Nemotron models, and Super and Ultra are different models. These ids are the defaults in `.env.example`; the full list the key can use is in [docs/token_factory_models.txt](docs/token_factory_models.txt). The NVIDIA NIM fallback uses its own ids (`NEMOTRON_*_MODEL` in `Copilot/agent/config.py`), where Super and Ultra default to the same model. Tier choice is visible per incident as a `diagnosis:tier` timeline event, and per chat answer as a badge (tier, model, provider).
 
 ## Where Nebius Token Factory fits
 Token Factory is the primary inference provider (`INFERENCE_PROVIDER=nebius`, OpenAI-compatible, `https://api.tokenfactory.nebius.com/v1`). It serves all three tiers and optionally the Hindsight memory LLM. The hosted demo runs on a Nebius AI Cloud VM ([docs/DEPLOY.md](docs/DEPLOY.md)).

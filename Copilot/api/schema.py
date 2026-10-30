@@ -39,6 +39,7 @@ class AskChatResponse(BaseModel):
     incident_id: Optional[str] = None
     tier: Optional[str] = None
     model: Optional[str] = None
+    provider: Optional[str] = None            # primary provider label for the tier ("Token Factory", "NVIDIA NIM", "Groq")
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     budget_exhausted: Optional[bool] = None   # True: no model was called (demo budget); the text may be a labelled replay

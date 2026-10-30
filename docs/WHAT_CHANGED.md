@@ -19,5 +19,6 @@ This project existed before the Submission Period. This note separates what was 
 9. **Benchmark harness:** `scripts/benchmark_tiers.py` measures latency/tokens per tier.
 10. **Tests and CI:** 32 test modules under `Copilot/tests`.
 11. **Fixes (27-28 Oct):** L01/L02 scenario fixes, "paid, no order" scenario, license, README/docs rewrite.
+12. **Detection beyond request errors (29-30 Oct):** the watcher now also opens incidents on process memory pressure (`ALERT_MEMORY_MB`, from Prometheus) and on application ERROR/exception logs that are not request events (`ALERT_ERROR_LOG_COUNT`); a stale `restart_worker` proposal is dropped when memory has already recovered; turning a fault off releases what it held.
 
 Commit history for the period: `git log --since=2026-08-26 --oneline`.
