@@ -1,4 +1,4 @@
-# Hosting the demo on a Nebius AI Cloud VM
+# Hosting the demo on a cloud VM (we used a Google Cloud e2-standard-4: 4 vCPU, 16 GB, 60 GB disk)
 
 Goal: one public, free-to-use URL that stays up until the judging window closes (15 Dec 2026), without an open model-spend
 tap and without exposing internal services. Everything here is in the repo; the steps marked **VERIFY** depend on Nebius
@@ -22,7 +22,7 @@ ingest keys are not secret.
 - Ubuntu LTS image, Docker Engine and the Compose plugin **>= 2.24** (the override uses `!reset`). `docker compose version` to check.
 - Size: the stack is 12 containers including a Postgres, Loki, Tempo, Prometheus, Grafana and Hindsight (which embeds its own
   Postgres and a local embedding model). **Sizing was not measured.** Start with 4 vCPU / 16 GB RAM / 50 GB disk, watch
-  `docker stats` during a benchmark run, and adjust. **VERIFY** which Nebius AI Cloud platform and preset fit this.
+  `docker stats` during a benchmark run, and adjust. Sizing that worked for us: Google Cloud e2-standard-4 (4 vCPU, 16 GB RAM), Ubuntu or Debian, 60 GB disk; ports 80, 443 and 8443 open.
 - Firewall / security group: allow inbound **22** (your IP only), **80**, **443** and **8443**. Nothing else.
 - Point a hostname at the VM. With no domain of your own, `<ip-with-dashes>.sslip.io` resolves to that IP and Let's Encrypt will
   issue a certificate for it, e.g. `203-0-113-5.sslip.io`. Port 80 must be reachable for the certificate challenge.

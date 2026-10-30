@@ -1,0 +1,94 @@
+{
+  "meta": {
+    "date": "2026-10-30 12:47 UTC",
+    "copilot": "http://localhost:9911",
+    "commit": "640a6f7",
+    "runs": 1,
+    "auto_modes": {
+      "new_incident": "full",
+      "context_shift": "full",
+      "repeat_after_fix": "verify"
+    },
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0"
+  },
+  "runs": [
+    {
+      "replicate": 1,
+      "scenario": "new_incident",
+      "expected_tier": "ultra",
+      "fault": "payment_failure",
+      "incident_id": "INC-0001",
+      "tier": "ultra",
+      "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+      "http_status": 200,
+      "detection_s": 62.78,
+      "auto_diag_s": 14.32,
+      "auto_mode": "full",
+      "auto_calls": 4,
+      "auto_tokens": 25647,
+      "chat_s": 13.54,
+      "chat_calls": 5,
+      "prompt_tokens": 39952,
+      "completion_tokens": 1706,
+      "action": "disable_fault",
+      "joined_incident": true,
+      "recalled": [],
+      "question": "why is checkout failing?",
+      "reply_text": "**Symptom**: The checkout service is failing on `POST /checkout` with an 85.71% error rate (6 of 7 requests returning HTTP 500) over the last 10 minutes. Latency remains low (p95: 14.4 ms), confirming this is not a performance degradation but a hard failure.\n\n**Evidence**:\n- Error rate: `POST /checkout` \u2014 7 requests, 6 errors, 85.71% error rate (enough_data: true)\u3010get_error_rate\u3011.\n- Latency: `POST /checkout` p95 = 14.4 ms (enough_data: true)\u3010get_latency\u3011.\n- At **12:37:47**, a fault was explicitly enabled via the admin endpoint:\n  ```\n  [12:37:47] WARNING | - | - | - | Fault state updated: payment_failure -> enabled=True (params={})\n  logger=astronomy.faults\n  ```\n  \u3010get_recent_logs(keyword=\"payment_failure\")\u3011.\n- The `/admin/faults` endpoint was called at the same timestamp and returned 200:\n  ```\n  [12:37:47] INFO | POST /admin/faults | 200 | 6ms\n  ```\n  \u3010get_recent_logs(keyword=\"fault\")\u3011.\n- Every subsequent checkout request fails with the explicit message:\n  ```\n  \"Checkout payment_failure fault active: declining transaction with HTTP 500\"\n  ```\n  (repeated across all error logs from 12:38:05 onward)\u3010get_recent_logs\u3011\u3010query_service_logs\u3011.\n- No prior identical incident found in history\u3010recall_past_incidents\u3011.\n\n**Root Cause**: An injected fault `payment_failure` was enabled via `POST /admin/faults` at 12:37:47 and has remained active, causing the checkout handler to intentionally return HTTP 500 on every request. This is a test/chaos fault left enabled in the runtime fault registry.\n\n**Recommendation**: Disable the `payment_failure` fault via the same admin endpoint (or the fault management UI) to restore normal checkout behavior. Verify by sending a test `POST /checkout` and confirming a 200 response.\n\nProposed action: disable_fault\n\n\ud83d\udee1\ufe0f **Incident Registered:** [`INC-0001`](/dashboard) \u2014 *Track dossier and verify fix on the [Incident Dashboard](/dashboard).*"
+    },
+    {
+      "replicate": 1,
+      "scenario": "context_shift",
+      "expected_tier": "super",
+      "fault": "db_pool_exhaustion",
+      "incident_id": "INC-0002",
+      "tier": "super",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "http_status": 200,
+      "detection_s": 57.23,
+      "auto_diag_s": 7.88,
+      "auto_mode": "full",
+      "auto_calls": 2,
+      "auto_tokens": 16193,
+      "chat_s": 9.08,
+      "chat_calls": 5,
+      "prompt_tokens": 34960,
+      "completion_tokens": 1194,
+      "action": "disable_fault",
+      "joined_incident": true,
+      "recalled": [
+        "INC-0001"
+      ],
+      "question": "checkout is returning 503 errors, what is the root cause and how do we fix it?",
+      "reply_text": "**Symptom**: The checkout service\u2019s POST /checkout endpoint is returning 503 errors for ~65% of requests (15/23 in the last 5\u202fmin) while latency remains low (~29\u202fms p95). Other routes are healthy and overall service health is up.\n\n**Evidence**:\n- Error rate: `POST /checkout` \u2013 65.22% errors (15/23) \u2013 enough_data: true\u3010get_error_rate\u3011.\n- Latency: `POST /checkout` p95 latency 29.3\u202fms \u2013 enough_data: true\u3010get_latency\u3011.\n- Recent logs show a fault injection event followed by repeated 503 errors:\n  - `[12:40:54] WARNING | - | - | - | {\"timestamp\":\"2026-10-30 12:40:54,775\",\"level\":\"WARNING\",\"service\":\"checkout\",\"message\":\"Fault state updated: db_pool_exhaustion -> enabled=True (params={})\",\"logger\":\"astronomy.faults\"...}`\u3010get_recent_logs\u3011.\n  - Subsequent log lines (from 12:40:57 onward) all contain `\"message\":\"POST /checkout -> 503 (\u2026ms)\"` with status 503, e.g.:\n    - `[12:40:57] ERROR | POST /checkout | 503 | 12ms | {\"timestamp\":\"2026-10-30 12:40:57,401\",\"level\":\"ERROR\",\"service\":\"checkout\",\"message\":\"POST /checkout -> 503 (11.8ms)\"...}`\u3010get_recent_logs\u3011.\n    - Similar entries at 12:41:14, 12:41:22, 12:41:33, 12:41:40, 12:41:49, 12:41:56, etc.\u3010get_recent_logs\u3011.\n- No other error types or latency spikes are present.\n\n**Root Cause**: The fault injection system has deliberately enabled a `db_pool_exhaustion` fault on the checkout service, causing the application to return 503 errors for checkout requests. This matches the pattern of past incident INC-0001 (checkout) where a fault was enabled and resolved by disabling it.\n\n**Recommendation**: Disable the active fault to restore normal operation, then verify that error rates drop to baseline and logs no longer show the fault enabled.\n\nProposed action: disable_fault\n\n\ud83d\udee1\ufe0f **Incident Registered:** [`INC-0002`](/dashboard) \u2014 *Track dossier and verify fix on the [Incident Dashboard](/dashboard).*\n\n\ud83d\udd01 **Recurrence:** `INC-0002` is a recurrence of `INC-0001`, which was resolved with `disable_fault`."
+    },
+    {
+      "replicate": 1,
+      "scenario": "repeat_after_fix",
+      "expected_tier": "nano",
+      "fault": "payment_failure",
+      "incident_id": "INC-0003",
+      "tier": "nano",
+      "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+      "http_status": 200,
+      "detection_s": 9.46,
+      "auto_diag_s": 3.02,
+      "auto_mode": "verify",
+      "auto_calls": 1,
+      "auto_tokens": 480,
+      "chat_s": 120.24,
+      "chat_calls": 0,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "action": null,
+      "joined_incident": false,
+      "recalled": [
+        "INC-0002",
+        "INC-0001"
+      ],
+      "question": "why is checkout failing?",
+      "reply_text": "Agent error: the assistant could not complete this request (reference ERR-224e749b). Please try again."
+    }
+  ]
+}
